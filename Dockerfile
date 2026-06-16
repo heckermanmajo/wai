@@ -13,6 +13,9 @@ COPY gateway ./gateway
 COPY lib ./lib
 COPY agents ./agents
 COPY tools ./tools
+COPY mcp_servers ./mcp_servers
+
+RUN mkdir -p /app/logs
 
 EXPOSE 8000
 

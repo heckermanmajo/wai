@@ -78,6 +78,9 @@ services:
       MINIO_ENDPOINT: minio:9000
       MINIO_ACCESS_KEY: wai
       MINIO_SECRET_KEY: wai_dev_minio
+      MCP_MOCK_URL: http://mcp_mock:8000
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      LOG_FILE: /app/logs/gateway.log
     ports:
       - "8500:8000"
     depends_on:
@@ -87,11 +90,35 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      mcp_mock:
+        condition: service_healthy
     volumes:
       - ./gateway:/app/gateway
       - ./lib:/app/lib
       - ./agents:/app/agents
       - ./tools:/app/tools
+      - ./mcp_servers:/app/mcp_servers
+      - ./logs:/app/logs
+
+  mcp_mock:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: wai-mcp-mock
+    command: ["uvicorn", "mcp_servers.mock_mcp.server:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+    environment:
+      LOG_FILE: /app/logs/mcp_mock.log
+    ports:
+      - "8501:8000"
+    volumes:
+      - ./mcp_servers:/app/mcp_servers
+      - ./lib:/app/lib
+      - ./logs:/app/logs
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
 
 volumes:
   postgres-data:
