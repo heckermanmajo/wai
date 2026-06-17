@@ -1,0 +1,17 @@
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+.venv/
+venv/
+.env
+
+logs/
+
+.idea/
+.vscode/*
+!.vscode/cline_mcp_settings.json
+.DS_Store

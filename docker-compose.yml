@@ -1,0 +1,127 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: wai-postgres
+    environment:
+      POSTGRES_USER: wai
+      POSTGRES_PASSWORD: wai_dev
+      POSTGRES_DB: postgres
+    ports:
+      - "5532:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U wai"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  minio:
+    image: minio/minio:latest
+    container_name: wai-minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: wai
+      MINIO_ROOT_PASSWORD: wai_dev_minio
+    ports:
+      - "9500:9000"
+      - "9501:9001"
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: wai-redis
+    ports:
+      - "6579:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: wai-pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@wai.local
+      PGADMIN_DEFAULT_PASSWORD: wai_dev
+      PGADMIN_CONFIG_SERVER_MODE: "False"
+      PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: "False"
+    ports:
+      - "5550:80"
+    volumes:
+      - pgadmin-data:/var/lib/pgadmin
+      - ./scripts/pgadmin-servers.json:/pgadmin4/servers.json:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: wai-gateway
+    environment:
+      ADMIN_DB_URL: postgresql+psycopg://wai:wai_dev@postgres:5432/admin_db
+      LOGGING_DB_URL: postgresql+psycopg://wai:wai_dev@postgres:5432/logging_db
+      TENANT_DB_URL_DEMO: postgresql+psycopg://wai:wai_dev@postgres:5432/tenant_demo
+      REDIS_URL: redis://redis:6379/0
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: wai
+      MINIO_SECRET_KEY: wai_dev_minio
+      MCP_MOCK_URL: http://mcp_mock:8000
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      LOG_FILE: /app/logs/gateway.log
+    ports:
+      - "8500:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      mcp_mock:
+        condition: service_healthy
+    volumes:
+      - ./gateway:/app/gateway
+      - ./lib:/app/lib
+      - ./agents:/app/agents
+      - ./tools:/app/tools
+      - ./mcp_servers:/app/mcp_servers
+      - ./logs:/app/logs
+
+  mcp_mock:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: wai-mcp-mock
+    command: ["uvicorn", "mcp_servers.mock_mcp.server:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+    environment:
+      LOG_FILE: /app/logs/mcp_mock.log
+    ports:
+      - "8501:8000"
+    volumes:
+      - ./mcp_servers:/app/mcp_servers
+      - ./lib:/app/lib
+      - ./logs:/app/logs
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  postgres-data:
+  minio-data:
+  redis-data:
+  pgadmin-data:

@@ -1,0 +1,70 @@
+{
+	"mcpServers": {
+		"codet5-jepa": {
+			"command": "E:\\handwerkai\\.venv\\Scripts\\python.exe",
+			"args": [
+				"E:\\handwerkai\\code t5+\\jepa_mcp_server.py"
+			],
+			"disabled": false,
+			"alwaysAllow": [
+				"semantic_code_search",
+				"multi_query_search",
+				"tree_mapping",
+				"generate_jepa_plan",
+				"suggest_code",
+				"diff_merge_code",
+				"batch_train",
+				"register_accepted_sample",
+				"show_jepa_status",
+				"reset_jepa_predictor"
+			]
+		},
+		"obsidian-brain": {
+			"command": "E:\\handwerkai\\.venv\\Scripts\\python.exe",
+			"args": [
+				"E:\\handwerkai\\mcp\\obsidian\\server.py"
+			],
+			"disabled": false,
+			"env": {
+				"OBSIDIAN_VAULT_PATH": "c:\\Users\\Theo\\Downloads\\wai-main\\werkai"
+			},
+			"alwaysAllow": [
+				"read_note",
+				"search_notes",
+				"write_memory_entry",
+				"append_to_note"
+			]
+		},
+		"codebase-index": {
+			"command": "E:\\handwerkai\\.venv\\Scripts\\python.exe",
+			"args": [
+				"-m",
+				"mcp_codebase_index.server"
+			],
+			"env": {
+				"PROJECT_ROOT": "c:\\Users\\Theo\\Downloads\\wai-main"
+			},
+			"disabled": false,
+			"alwaysAllow": [
+				"get_project_summary",
+				"list_files",
+				"get_structure_summary",
+				"get_functions",
+				"get_classes",
+				"get_imports",
+				"get_function_source",
+				"get_class_source",
+				"find_symbol",
+				"get_dependencies",
+				"get_dependents",
+				"get_change_impact",
+				"get_call_chain",
+				"get_file_dependencies",
+				"get_file_dependents",
+				"search_codebase",
+				"reindex",
+				"get_usage_stats"
+			]
+		}
+	}
+}
