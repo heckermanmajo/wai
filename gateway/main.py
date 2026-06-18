@@ -1,17 +1,14 @@
-"""wai Gateway — FastAPI-Einstieg.
+"""wai Gateway — FastAPI entry.
 
 Endpoints:
     GET  /health  → Liveness
-    POST /chat    → delegiert an manager-Agent
+    POST /chat    → delegates to manager-agent (async)
 
-Erste, simple Version: kein Auth, keine DB-Persistenz, keine Sessions.
-Frontend hält History stateless und schickt sie bei jedem Call mit.
+Tenant-aware: tenant_id flows through to all downstream services.
 """
-import asyncio
-
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from lib.logging import setup_logging, get_logger
 from agents.manager.agent import chat as manager_chat
@@ -38,6 +35,7 @@ class ChatMessage(BaseModel):
 class ChatRequest(BaseModel):
     message: str
     history: list[ChatMessage] = []
+    tenant_id: str = Field(default="demo_tenant", description="ID des Handwerksbetriebs")
 
 
 class ChatResponse(BaseModel):
@@ -53,16 +51,12 @@ def health() -> dict[str, str]:
 
 @app.post("/chat", response_model=ChatResponse)
 async def chat_endpoint(req: ChatRequest) -> ChatResponse:
-    log.info("HTTP /chat user_msg=%r history_len=%d", req.message, len(req.history))
+    if not req.message or not req.message.strip():
+        raise HTTPException(status_code=422, detail="message darf nicht leer sein")
+    log.info("HTTP /chat tenant=%s user_msg=%r history_len=%d", req.tenant_id, req.message, len(req.history))
     history_dicts = [m.model_dump() for m in req.history]
     try:
-        result = await asyncio.to_thread(manager_chat, history_dicts, req.message)
-    except RuntimeError as e:
-        log.warning("HTTP /chat config_error=%s", e)
-        raise HTTPException(status_code=503, detail=str(e))
-    except Exception:
-        log.exception("HTTP /chat unexpected_error")
-        raise HTTPException(status_code=500, detail="Interner Fehler im Manager-Agent")
+        result = await manager_chat(history_dicts, req.message, tenant_id=req.tenant_id)
+    except RuntimeError:
+        raise HTTPException(status_code=503, detail="OPENAI_API_KEY fehlt oder Konfigurationsfehler")
     return ChatResponse(**result)
-
-

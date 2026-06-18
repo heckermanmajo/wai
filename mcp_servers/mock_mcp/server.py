@@ -1,63 +1,60 @@
-"""Mock-MCP-Server — HTTP-Stub mit MCP-ähnlichen Endpoints.
+"""Lead-Manager-Mock — FastMCP SSE server with 3 lead tools.
 
-Kein echtes MCP-Protokoll (kein JSON-RPC, kein stdio) — stattdessen ein
-einfacher FastAPI-Service der das Konzept "Tool-Manifest + Tool-Aufruf"
-in HTTP nachzeichnet. Reicht als starting point, bis ein echter MCP-Stack
-eingezogen wird.
-
-Endpoints:
-    GET  /list_tools  → Tool-Manifest
-    POST /call_tool   → {name, arguments} → {result}
-
-Aktuelles Tool:
-    get_time — aktuelles UTC-Datum/-Uhrzeit (ISO-8601)
+Tools:
+  hole_kunden_status  — look up a customer by name
+  erstelle_kunden_notiz — append a note, auto-create if missing
+  suche_kunden        — substring search across customers
 """
-from datetime import datetime, timezone
+import os
 
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
+from mcp.server.fastmcp import FastMCP
 
-from lib.logging import setup_logging, get_logger
+from lib.logging import get_logger
 
-setup_logging()
-log = get_logger(__name__)
+logger = get_logger(__name__)
 
-app = FastAPI(title="wai mock-mcp", version="0.1.0")
+KUNDEN_DB: dict[str, dict] = {
+    "meier": {"projekt": "Dachsanierung", "status": "Wartet auf Material", "rechnung_offen": True, "notizen": []},
+    "schmidt": {"projekt": "Heizungswartung", "status": "Abgeschlossen", "rechnung_offen": False, "notizen": []},
+    "mueller": {"projekt": "Badrenovierung", "status": "In Arbeit", "rechnung_offen": True, "notizen": []},
+}
 
-
-class CallToolRequest(BaseModel):
-    name: str
-    arguments: dict = {}
-
-
-@app.get("/")
-def root() -> dict[str, str]:
-    return {"service": "wai-mock-mcp", "status": "ok"}
+mcp = FastMCP("lead-manager-mock", port=8001)
 
 
-@app.get("/health")
-def health() -> dict[str, str]:
-    return {"status": "ok"}
+@mcp.tool()
+def hole_kunden_status(kunden_name: str) -> str:
+    key = kunden_name.lower().strip()
+    kunde = KUNDEN_DB.get(key)
+    if not kunde:
+        return f"Fehler: Kein Kunde namens '{kunden_name}' im System gefunden."
+    offen = "Ja" if kunde["rechnung_offen"] else "Nein"
+    return f"Kunde '{key.title()}': Projekt '{kunde['projekt']}', Status: {kunde['status']}, Rechnung offen: {offen}"
 
 
-@app.get("/list_tools")
-def list_tools() -> dict:
-    return {
-        "tools": [
-            {
-                "name": "get_time",
-                "description": "Gibt die aktuelle UTC-Zeit zurück (ISO-8601).",
-                "parameters": {"type": "object", "properties": {}},
-            }
-        ]
-    }
+@mcp.tool()
+def erstelle_kunden_notiz(kunden_name: str, notiz: str) -> str:
+    key = kunden_name.lower().strip()
+    kunde = KUNDEN_DB.get(key)
+    if not kunde:
+        KUNDEN_DB[key] = {"projekt": "Unbekannt", "status": "Neu", "rechnung_offen": False, "notizen": []}
+        kunde = KUNDEN_DB[key]
+        logger.info("auto-create kunde=%s", key)
+    kunde["notizen"].append(notiz)
+    logger.info("notiz_gespeichert kunde=%s notiz=%r", key, notiz)
+    return f"✅ Notiz zu '{key.title()}' gespeichert: '{notiz}'"
 
 
-@app.post("/call_tool")
-def call_tool(req: CallToolRequest) -> dict:
-    log.info("call_tool name=%s args=%r", req.name, req.arguments)
-    if req.name == "get_time":
-        now = datetime.now(timezone.utc).isoformat()
-        return {"result": {"now": now}}
-    log.warning("call_tool unknown tool=%s", req.name)
-    raise HTTPException(status_code=404, detail=f"Unbekanntes Tool: {req.name}")
+@mcp.tool()
+def suche_kunden(name_teil: str) -> str:
+    term = name_teil.lower().strip()
+    treffer = [f"- {n.title()} ({d['projekt']})" for n, d in KUNDEN_DB.items() if term in n]
+    if not treffer:
+        return "Keine Kunden gefunden."
+    return "Gefundene Kunden:\n" + "\n".join(treffer)
+
+
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 8001))
+    logger.info("Starte Lead-Manager-Mock auf Port %s via SSE", port)
+    mcp.run(transport="sse")

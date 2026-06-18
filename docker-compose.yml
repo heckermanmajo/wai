@@ -78,7 +78,7 @@ services:
       MINIO_ENDPOINT: minio:9000
       MINIO_ACCESS_KEY: wai
       MINIO_SECRET_KEY: wai_dev_minio
-      MCP_MOCK_URL: http://mcp_mock:8000
+      MCP_LEAD_URL: http://mcp_mock:8001/sse
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       LOG_FILE: /app/logs/gateway.log
     ports:
@@ -105,17 +105,17 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: wai-mcp-mock
-    command: ["uvicorn", "mcp_servers.mock_mcp.server:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+    command: ["python", "-m", "mcp_servers.mock_mcp.server"]
     environment:
       LOG_FILE: /app/logs/mcp_mock.log
     ports:
-      - "8501:8000"
+      - "8501:8001"
     volumes:
       - ./mcp_servers:/app/mcp_servers
       - ./lib:/app/lib
       - ./logs:/app/logs
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
       interval: 5s
       timeout: 3s
       retries: 5

@@ -1,33 +1,35 @@
-"""Hardgecodeter Provider für den manager-Agent.
+"""Two-tier LLM provider for manager-agent.
 
-Modell: GPT-5.5 (CLAUDE.md-Default für alle OpenAI-Implementierungen).
-API-Key kommt aus der Umgebungsvariable OPENAI_API_KEY.
-
-Diese Datei ist bewusst der einzige Ort an dem Provider/Modell festgehalten
-werden — Manager-Logik importiert MODEL und get_client() und kennt sonst
-nichts vom Provider.
+Tier 1 (gpt-4o-mini): Fast, cheap intent classification.
+Tier 2 (gpt-4o): Complex reasoning, tool-calling, response generation.
 """
 import os
 
-from openai import OpenAI
+from openai import AsyncOpenAI
 
 from lib.logging import get_logger
 
 log = get_logger(__name__)
 
-MODEL = "gpt-5.5"
+TIER_1_MODEL = os.environ.get("TIER_1_MODEL", "gpt-4o-mini")
+TIER_2_MODEL = os.environ.get("TIER_2_MODEL", "gpt-4o")
 
-_client: OpenAI | None = None
+_client: AsyncOpenAI | None = None
 
 
-def get_client() -> OpenAI:
-    """Lazy-init des OpenAI-Clients. Wirft RuntimeError falls Key fehlt."""
+def get_client() -> AsyncOpenAI:
     global _client
     if _client is None:
         if not os.environ.get("OPENAI_API_KEY"):
-            raise RuntimeError(
-                "OPENAI_API_KEY ist nicht gesetzt — siehe README → 'Setup'."
-            )
-        _client = OpenAI()
-        log.info("provider initialisiert model=%s", MODEL)
+            raise RuntimeError("OPENAI_API_KEY ist nicht gesetzt.")
+        _client = AsyncOpenAI()
+        log.info("provider initialisiert tier1=%s tier2=%s", TIER_1_MODEL, TIER_2_MODEL)
     return _client
+
+
+def get_tier1_model() -> str:
+    return TIER_1_MODEL
+
+
+def get_tier2_model() -> str:
+    return TIER_2_MODEL
