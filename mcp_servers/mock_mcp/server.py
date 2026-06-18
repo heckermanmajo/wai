@@ -10,16 +10,11 @@ import os
 from mcp.server.fastmcp import FastMCP
 
 from lib.logging import get_logger
+from mcp_servers.mock_mcp.data import KUNDEN_DB
 
 logger = get_logger(__name__)
 
-KUNDEN_DB: dict[str, dict] = {
-    "meier": {"projekt": "Dachsanierung", "status": "Wartet auf Material", "rechnung_offen": True, "notizen": []},
-    "schmidt": {"projekt": "Heizungswartung", "status": "Abgeschlossen", "rechnung_offen": False, "notizen": []},
-    "mueller": {"projekt": "Badrenovierung", "status": "In Arbeit", "rechnung_offen": True, "notizen": []},
-}
-
-mcp = FastMCP("lead-manager-mock", port=8001)
+mcp = FastMCP("lead-manager-mock", host="0.0.0.0", port=8001)
 
 
 @mcp.tool()
