@@ -1,7 +1,7 @@
 """Two-tier LLM provider for manager-agent.
 
-Tier 1 (gpt-4o-mini): Fast, cheap intent classification.
-Tier 2 (gpt-4o): Complex reasoning, tool-calling, response generation.
+Tier 1 (gpt-5.4): Fast intent classification.
+Tier 2 (gpt-5.5): Complex reasoning, tool-calling, response generation.
 """
 import os
 
@@ -11,8 +11,8 @@ from lib.logging import get_logger
 
 log = get_logger(__name__)
 
-TIER_1_MODEL = os.environ.get("TIER_1_MODEL", "gpt-4o-mini")
-TIER_2_MODEL = os.environ.get("TIER_2_MODEL", "gpt-4o")
+TIER_1_MODEL = os.environ.get("TIER_1_MODEL", "gpt-5.4")
+TIER_2_MODEL = os.environ.get("TIER_2_MODEL", "gpt-5.5")
 
 _client: AsyncOpenAI | None = None
 
