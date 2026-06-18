@@ -79,7 +79,8 @@ services:
       MINIO_ACCESS_KEY: wai
       MINIO_SECRET_KEY: wai_dev_minio
       MCP_LEAD_URL: http://mcp_mock:8001/sse
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      # Shared Demo-Key (project-scope, limitiertes Budget). Lokaler $OPENAI_API_KEY hat Vorrang.
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-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}
       LOG_FILE: /app/logs/gateway.log
     ports:
       - "8500:8000"
