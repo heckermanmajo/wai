@@ -33,7 +33,7 @@ async def classify_intent(user_message: str) -> str:
             {"role": "user", "content": user_message},
         ],
         temperature=0,
-        max_tokens=10,
+        max_completion_tokens=10,
     )
     return (resp.choices[0].message.content or "general_chat").strip().lower()
 
@@ -77,10 +77,16 @@ async def _run_tool_loop(session: ClientSession, messages: list) -> tuple[str, l
     for _ in range(MAX_TOOL_ROUNDS):
         prev = len(messages)
         messages = await _run_tool_round(session, messages, tools)
-        summary.extend(
-            {"name": m.get("tool_call_id", "?"), "args": {}}
-            for m in messages[prev:] if m.get("role") == "tool"
-        )
+        for m in messages[prev:]:
+            if m.get("role") != "assistant":
+                continue
+            for tc in m.get("tool_calls") or []:
+                fn = tc.get("function", {})
+                try:
+                    args = json.loads(fn.get("arguments") or "{}")
+                except json.JSONDecodeError:
+                    args = {}
+                summary.append({"name": fn.get("name", "?"), "args": args})
         last = messages[-1]
         if last["role"] == "assistant" and not last.get("tool_calls"):
             break
