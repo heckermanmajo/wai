@@ -6,12 +6,30 @@
    ```bash
    export OPENAI_API_KEY=sk-...
    ```
-2. **Stack starten**:
+2. **Stack starten** (führt Alembic-Migrationen für admin_db + logging_db aus und legt den Demo-Tenant an):
    ```bash
    ./scripts/start_local.sh
    ```
 3. **Chat öffnen**: http://localhost:8500
 4. **Logs anschauen**: `tail -f logs/gateway.log logs/mcp_mock.log`
+
+### Weitere Tenants anlegen
+```bash
+docker compose exec gateway python scripts/create_tenant.py <slug>
+# z.B.
+docker compose exec gateway python scripts/create_tenant.py gaertnerei_mueller
+# Auch erlaubt (wird transliteriert):
+docker compose exec gateway python scripts/create_tenant.py "Gärtnerei Müller GmbH"
+```
+
+### Migrationen
+```bash
+# Admin/Logging einmalig
+docker compose exec gateway alembic -c alembic-admin.ini upgrade head
+docker compose exec gateway alembic -c alembic-logging.ini upgrade head
+# Tenant pro Slug
+docker compose exec gateway alembic -c alembic-tenant.ini -x tenant_slug=demo upgrade head
+```
 
 | Service | URL | Zweck |
 |---|---|---|
@@ -63,17 +81,27 @@ Detail-READMEs:
 ### /scripts — lokale Dev-/Ops-Helper (start, init-db, …)
 
 ## databases
-### Admin DB
-Hier werden die Customers gepflegt -> unsere Customers; und ebenso unsere 
-admin accounts. Zudem wird heir gefpegt welchen zugirff unsere kunden haben
-usw. Also alles was nicht unsere kunden selbst eiunstellen können.
+Es gibt **drei logische DB-Klassen**, jede mit eigener Alembic-Historie:
 
-### Logging DB
-hier landen events, die den kunden nicht interessieren, aber für uns als plattform
-betreiber relevant sind um das ganze zu adminsitrieren und zu überwachen.
+### admin_db (zentral, eine)
+Plattform-Administration: `Tenant`, `UserData`, `TenantMembership`,
+`TenantSettingsEntry`, `AiProvider`. Hier wohnen die Logins (sowohl Plattform-Staff
+als auch Tenant-Mitarbeiter) und die Verbindung User ↔ Mandant.
 
-### Tenant DB 
-Auf den Teannt dbs sind alle daten die dem kunden gehören.
+### logging_db (zentral, eine)
+Append-only Telemetrie: `RequestLog`, `EventLog`, `LogEntry`, `CronWorker`-Heartbeats.
+Trägt `tenant_id` als Tag — Plattform-Support kann mandantenübergreifend suchen.
+
+### tenant_&lt;slug&gt; (eine physische DB pro Mandant)
+Alle fachlichen Daten des Kunden: `Project`, `Task`, `Note`, `Comment`, `Tag`,
+`Attachment`, `Reminder`, `Account`, `Contact`, `Lead`, `Deal`, `Pipeline`, `Stage`,
+`Interaction`, plus die Chat-Historie (`AiChat`, `AiMessage`, `AiToolCall`).
+Neue Mandanten via `scripts/create_tenant.py` — physische DB + pgvector + Alembic.
+
+**Bewusste Design-Entscheidung**: Es gibt **keine Foreign-Key-Constraints** in der DB.
+Alle Beziehungen sind nackte Integer-IDs (`user_id`, `account_id`, …). Vorteile:
+weniger Migrations-Schmerz, Cross-DB-Pointer (admin → tenant) sind möglich,
+polymorphes Verlinken via `(target_cls, target_id)` ist trivial.
 
 ## Agents vs Tools
 Agents haben 'descision' capability

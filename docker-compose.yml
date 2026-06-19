@@ -73,14 +73,16 @@ services:
     environment:
       ADMIN_DB_URL: postgresql+psycopg://wai:wai_dev@postgres:5432/admin_db
       LOGGING_DB_URL: postgresql+psycopg://wai:wai_dev@postgres:5432/logging_db
-      TENANT_DB_URL_DEMO: postgresql+psycopg://wai:wai_dev@postgres:5432/tenant_demo
+      TENANT_DB_URL_TEMPLATE: postgresql+psycopg://wai:wai_dev@postgres:5432/tenant_{slug}
       REDIS_URL: redis://redis:6379/0
       MINIO_ENDPOINT: minio:9000
       MINIO_ACCESS_KEY: wai
       MINIO_SECRET_KEY: wai_dev_minio
+      MINIO_BUCKET_PREFIX: "wai-tenant"
       MCP_LEAD_URL: http://mcp_mock:8001/sse
       # Shared Demo-Key (project-scope, limitiertes Budget). Lokaler $OPENAI_API_KEY hat Vorrang.
       OPENAI_API_KEY: ${OPENAI_API_KEY:-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}
+      WAI_SECRET_KEY: ${WAI_SECRET_KEY:-dev-secret-only-change-in-prod-aaaaaaaaaaaaaaaaaaaaaaaaaa}
       LOG_FILE: /app/logs/gateway.log
     ports:
       - "8500:8000"
@@ -99,6 +101,11 @@ services:
       - ./agents:/app/agents
       - ./tools:/app/tools
       - ./mcp_servers:/app/mcp_servers
+      - ./alembic:/app/alembic
+      - ./alembic-admin.ini:/app/alembic-admin.ini:ro
+      - ./alembic-logging.ini:/app/alembic-logging.ini:ro
+      - ./alembic-tenant.ini:/app/alembic-tenant.ini:ro
+      - ./scripts:/app/scripts
       - ./logs:/app/logs
 
   mcp_mock:
@@ -111,6 +118,59 @@ services:
       LOG_FILE: /app/logs/mcp_mock.log
     ports:
       - "8501:8001"
+    volumes:
+      - ./mcp_servers:/app/mcp_servers
+      - ./lib:/app/lib
+      - ./logs:/app/logs
+    healthcheck:
+      test: ["CMD-SHELL", "python -c 'import socket,sys; s=socket.socket(); s.settimeout(2); sys.exit(0 if not s.connect_ex((\"localhost\", 8001)) else 1)'"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  crm_mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: wai-crm-mcp
+    command: ["python", "-m", "mcp_servers.crm_mcp.server"]
+    environment:
+      WAI_TENANT_SLUG_DEFAULT: demo
+      ADMIN_DB_URL: postgresql+psycopg://wai:wai_dev@postgres:5432/admin_db
+      TENANT_DB_URL_TEMPLATE: postgresql+psycopg://wai:wai_dev@postgres:5432/tenant_{slug}
+      LOG_FILE: /app/logs/crm_mcp.log
+    ports:
+      - "8502:8001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./mcp_servers:/app/mcp_servers
+      - ./lib:/app/lib
+      - ./logs:/app/logs
+    healthcheck:
+      test: ["CMD-SHELL", "python -c 'import socket,sys; s=socket.socket(); s.settimeout(2); sys.exit(0 if not s.connect_ex((\"localhost\", 8001)) else 1)'"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  debug_mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: wai-debug-mcp
+    command: ["python", "-m", "mcp_servers.debug_mcp.server"]
+    environment:
+      WAI_TENANT_SLUG_DEFAULT: demo
+      ADMIN_DB_URL: postgresql+psycopg://wai:wai_dev@postgres:5432/admin_db
+      LOGGING_DB_URL: postgresql+psycopg://wai:wai_dev@postgres:5432/logging_db
+      TENANT_DB_URL_TEMPLATE: postgresql+psycopg://wai:wai_dev@postgres:5432/tenant_{slug}
+      LOG_FILE: /app/logs/debug_mcp.log
+    ports:
+      - "8503:8001"
+    depends_on:
+      postgres:
+        condition: service_healthy
     volumes:
       - ./mcp_servers:/app/mcp_servers
       - ./lib:/app/lib

@@ -14,6 +14,9 @@ COPY lib ./lib
 COPY agents ./agents
 COPY tools ./tools
 COPY mcp_servers ./mcp_servers
+COPY alembic ./alembic
+COPY alembic-admin.ini alembic-logging.ini alembic-tenant.ini ./
+COPY scripts ./scripts
 
 RUN mkdir -p /app/logs
 
