@@ -4,6 +4,11 @@ Verschachtelte Chats: parent_chat_id+parent_tool_call_id verweisen auf den
 Eltern-Chat bzw. den Tool-Call, der diesen Sub-Chat aufgespannt hat
 (z.B. wenn der Manager-Agent einen Spezialisten ueber ein Tool ruft).
 depth=0 fuer Top-Level.
+
+AiChat kann zusätzlich einen polymorphen Anker an eine Resource tragen
+(Vorgang, View, Document, …) — analog zu ``Document``/``Note``/``Task`` über
+``target_cls`` + ``target_id``. Leerer Anker (``target_cls=""``, ``target_id=0``)
+bedeutet: der Chat ist unverankert / global im Tenant.
 """
 from __future__ import annotations
 
@@ -27,3 +32,5 @@ class AiChat(BaseMixin, TenantBase):
     parent_tool_call_id: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     depth: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     is_shared: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    target_cls: Mapped[str] = mapped_column(String(64), nullable=False, default="", index=True)
+    target_id: Mapped[int] = mapped_column(Integer, nullable=False, default=0)

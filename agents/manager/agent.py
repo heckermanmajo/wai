@@ -29,7 +29,7 @@ from lib.db import session_for_tenant
 from lib.entities.tenant import AiChat, AiMessage, AiToolCall, ChatArtifact
 from lib.events import EventEmitter
 from lib.logging import get_logger
-from lib.tenant_context import get_tenant
+from lib.tenant_context import get_tenant, set_actor
 
 log = get_logger(__name__)
 
@@ -449,6 +449,7 @@ async def chat(
     user_id: int,
     emitter: EventEmitter | None = None,
 ) -> dict:
+    set_actor("ai", "manager")
     if not user_message or not user_message.strip():
         return {"response": "Bitte gib eine Nachricht ein.", "tool_calls": [], "duration_ms": 0, "intent": ""}
 

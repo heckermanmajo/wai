@@ -58,3 +58,29 @@ def list_entities() -> dict[str, type]:
 
 def is_valid_alias(alias: str) -> bool:
     return alias in _alias_to_cls
+
+
+def validate_target(cls_alias: str, target_id: int) -> None:
+    """Prüft ein (target_cls, target_id)-Paar streng vor dem Insert.
+
+    Konvention: leerer Anker (cls_alias="" und target_id=0) ist erlaubt und
+    bedeutet "unverankert". Sobald eins der beiden gesetzt ist, müssen beide
+    konsistent sein, der Alias muss registriert sein und die ID > 0.
+    """
+    if cls_alias == "" and target_id == 0:
+        return
+    if (cls_alias == "") != (target_id == 0):
+        raise ValueError(
+            f"target_cls und target_id müssen entweder beide leer oder beide "
+            f"gesetzt sein (cls={cls_alias!r}, id={target_id})"
+        )
+    if not is_valid_alias(cls_alias):
+        raise ValueError(
+            f"Unbekannter target_cls-Alias: {cls_alias!r}. "
+            f"Bekannte Aliase: {list_aliases()}"
+        )
+    if target_id <= 0:
+        raise ValueError(
+            f"target_id muss > 0 sein, wenn target_cls gesetzt ist "
+            f"(cls={cls_alias!r}, id={target_id})"
+        )

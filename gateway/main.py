@@ -95,7 +95,8 @@ from lib.storage import (
     presigned_get_url,
     upload_bytes,
 )
-from lib.tenant_context import set_tenant
+from lib.polymorphic import validate_target
+from lib.tenant_context import set_tenant, set_trace_uid
 from lib.transcribe import transcribe
 from agents.manager.agent import chat as manager_chat
 from gateway.ui_chat import render_chat
@@ -348,6 +349,8 @@ def chat_ui(slug: str, request: Request) -> Response:
 
 class NewChatRequest(BaseModel):
     title: str = ""
+    target_cls: str = ""
+    target_id: int = 0
 
 
 class ShareRequest(BaseModel):
@@ -390,12 +393,20 @@ def create_chat(slug: str, req: NewChatRequest, ctx: UserContext = Depends(requi
     title = (req.title or "").strip()
     if not title:
         title = f"Neuer Chat {time.strftime('%Y-%m-%d %H:%M')}"
+    target_cls = (req.target_cls or "").strip()
+    target_id = req.target_id or 0
+    try:
+        validate_target(target_cls, target_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
     with session_for_tenant(slug) as s:
         chat = AiChat(
             title=title,
             user_id=ctx.user_id,
             agent_name="manager",
             model="gpt-5.5",
+            target_cls=target_cls,
+            target_id=target_id,
         )
         s.add(chat)
         s.commit()
@@ -514,6 +525,7 @@ def _sse_format(event_name: str, payload: dict) -> str:
 
 async def _run_chat_streaming(slug: str, chat_id: int, user_id: int, user_message: str):
     trace_uid = new_trace_uid()
+    set_trace_uid(trace_uid)
     started_at = now_utc()
     started_mono = time.monotonic()
     emitter = EventEmitter(trace_uid, slug, user_message)
