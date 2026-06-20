@@ -20,5 +20,8 @@ docker compose exec -T gateway alembic -c alembic-logging.ini upgrade head
 echo "[tenant] Lege Tenant 'demo' an (idempotent)"
 docker compose exec -T gateway python scripts/create_tenant.py demo
 
+echo "[seed] Dev-User in 'demo' anlegen (Passwort: 123)"
+docker compose exec -T gateway python scripts/seed_admin.py --tenant demo
+
 echo "[ok] Stack läuft — Chat: http://localhost:8500"
 docker compose logs -f gateway mcp_mock

@@ -29,6 +29,7 @@ if str(_PROJECT_ROOT) not in sys.path:
 from sqlalchemy import create_engine, text  # noqa: E402
 
 from lib.db import server_url_without_db, tenant_db_url  # noqa: E402
+from lib.seed import ensure_admin_user  # noqa: E402
 from lib.slugify import is_valid_slug, slugify_tenant  # noqa: E402
 
 
@@ -102,64 +103,6 @@ def _ensure_admin_tenant_row(slug: str) -> None:
         print(f"[warn] Konnte Tenant-Row in admin_db nicht anlegen: {exc}")
 
 
-def _ensure_admin_user(
-    slug: str,
-    username: str,
-    password: str,
-    display_name: str = "",
-) -> None:
-    """Legt UserData + TenantMembership in admin_db an (idempotent)."""
-    from sqlalchemy import select
-
-    from lib.auth import hash_password
-    from lib.db import session_for_admin
-    from lib.entities.admin import Tenant, TenantMembership, UserData
-
-    with session_for_admin() as s:
-        tenant = s.scalar(select(Tenant).where(Tenant.slug == slug))
-        if tenant is None:
-            print(f"[warn] kein Tenant '{slug}' in admin_db — User kann nicht verknuepft werden")
-            return
-
-        user = s.scalar(select(UserData).where(UserData.username == username))
-        if user is None:
-            user = UserData(
-                username=username,
-                password_hash=hash_password(password),
-                platform_role="none",
-                is_active=True,
-                display_name=display_name or username,
-            )
-            s.add(user)
-            s.flush()
-            print(f"[ok] UserData '{username}' angelegt (id={user.id})")
-        else:
-            user.password_hash = hash_password(password)
-            print(f"[info] UserData '{username}' existiert — Passwort wurde aktualisiert")
-
-        membership = s.scalar(
-            select(TenantMembership).where(
-                TenantMembership.user_id == user.id,
-                TenantMembership.tenant_id == tenant.id,
-            )
-        )
-        if membership is None:
-            s.add(
-                TenantMembership(
-                    user_id=user.id,
-                    tenant_id=tenant.id,
-                    tenant_role="admin",
-                    is_active=True,
-                )
-            )
-            print(f"[ok] TenantMembership angelegt (user='{username}', tenant='{slug}', role=admin)")
-        else:
-            membership.is_active = True
-            print(f"[info] TenantMembership existiert (user='{username}', tenant='{slug}')")
-
-        s.commit()
-
-
 def main() -> int:
     parser = argparse.ArgumentParser(description="Lege einen neuen Tenant an.")
     parser.add_argument("slug", help="ASCII-Slug ([a-z0-9_]+) oder freier Name (wird transliteriert)")
@@ -192,7 +135,7 @@ def main() -> int:
             if not password:
                 print("[err] leeres Passwort", file=sys.stderr)
                 return 2
-        _ensure_admin_user(slug, args.admin_username, password, args.admin_display_name)
+        ensure_admin_user(slug, args.admin_username, password, args.admin_display_name)
 
     print(f"[done] Tenant '{slug}' bereit.")
     return 0
