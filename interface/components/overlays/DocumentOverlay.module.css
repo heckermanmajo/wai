@@ -1,0 +1,143 @@
+.header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg-secondary);
+}
+
+.title {
+  flex: 1;
+  font-size: 15px;
+  background: transparent;
+  border: 1px solid transparent;
+  padding: 6px 8px;
+  color: var(--fg-primary);
+}
+
+.title:focus {
+  border-color: var(--border-darker);
+  background: var(--bg-tertiary);
+}
+
+input.title {
+  font-family: inherit;
+}
+
+.actions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.autosave {
+  font-size: 12px;
+  color: var(--fg-secondary);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.close {
+  border: none;
+  font-size: 18px;
+  padding: 2px 8px;
+}
+
+.grid {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 1fr 280px;
+  min-height: 0;
+}
+
+.editor {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--border-subtle);
+}
+
+.textarea {
+  flex: 1;
+  width: 100%;
+  resize: none;
+  border: none;
+  border-radius: 0;
+  background: var(--bg-primary);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  padding: 14px;
+}
+
+.preview {
+  flex: 1;
+  padding: 14px;
+  overflow: auto;
+}
+
+.versions {
+  background: var(--bg-secondary);
+  display: grid;
+  grid-template-rows: auto 1fr;
+  min-height: 0;
+}
+
+.versionsHead {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border-subtle);
+  font-size: 12px;
+  color: var(--fg-secondary);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.versionsHead button {
+  font-size: 11px;
+  padding: 2px 8px;
+}
+
+.versions ul {
+  list-style: none;
+  margin: 0;
+  padding: 6px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.verItem {
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 6px 8px;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.verItem[data-active="1"] {
+  border-color: var(--accent);
+}
+
+.verLink {
+  flex: 1;
+  cursor: pointer;
+  display: grid;
+  gap: 2px;
+  font-size: 11px;
+  color: var(--fg-secondary);
+}
+
+.verLink strong {
+  color: var(--fg-primary);
+  font-family: var(--font-mono);
+}
+
+.diffBtn {
+  font-size: 12px;
+  padding: 2px 8px;
+}

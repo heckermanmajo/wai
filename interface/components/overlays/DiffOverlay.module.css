@@ -1,0 +1,75 @@
+.header {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.labels {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--fg-secondary);
+  display: inline-flex;
+  gap: 6px;
+}
+
+.from {
+  color: var(--danger);
+}
+
+.to {
+  color: var(--success);
+}
+
+.close {
+  margin-left: auto;
+  border: none;
+  font-size: 18px;
+  padding: 2px 8px;
+}
+
+.body {
+  overflow: auto;
+  padding: 14px;
+}
+
+.err {
+  background: var(--danger-bg);
+  color: var(--danger);
+  padding: 8px;
+  border-radius: var(--radius-md);
+}
+
+.loading {
+  color: var(--fg-tertiary);
+  text-align: center;
+  padding: 20px;
+}
+
+.diff {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  white-space: pre-wrap;
+  background: var(--code-bg);
+  border-radius: var(--radius-md);
+  padding: 12px 16px;
+  color: var(--fg-secondary);
+  margin: 0;
+}
+
+.equal {
+  color: var(--fg-tertiary);
+}
+
+.del {
+  background: rgba(240, 128, 128, 0.10);
+  color: var(--danger);
+  display: block;
+}
+
+.ins {
+  background: rgba(126, 217, 156, 0.10);
+  color: var(--success);
+  display: block;
+}

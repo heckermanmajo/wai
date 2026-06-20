@@ -16,6 +16,8 @@ from lib.polymorphic import register_entity
 @register_entity("ai.message")
 class AiMessage(BaseMixin, TenantBase):
     __tablename__ = "ai_message"
+    # Plan 04: Telemetrie, kein Audit-Wert.
+    __change_log__ = False
 
     chat_id: Mapped[int] = mapped_column(Integer, nullable=False)
     role: Mapped[str] = mapped_column(String(32), nullable=False)

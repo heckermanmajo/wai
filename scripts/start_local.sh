@@ -23,5 +23,8 @@ docker compose exec -T gateway python scripts/create_tenant.py demo
 echo "[seed] Dev-User in 'demo' anlegen (Passwort: 123)"
 docker compose exec -T gateway python scripts/seed_admin.py --tenant demo
 
-echo "[ok] Stack läuft — Chat: http://localhost:8500"
-docker compose logs -f gateway mcp_mock
+echo "[ok] Stack laeuft."
+echo "      Backend-API:  http://localhost:8500"
+echo "      Next.js-UI:   http://localhost:3000"
+echo "      Traces:       http://localhost:3000/traces"
+docker compose logs -f gateway interface mcp_mock

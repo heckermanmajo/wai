@@ -1,0 +1,152 @@
+.msg {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.role {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--fg-tertiary);
+  font-family: var(--font-mono);
+}
+
+.body {
+  padding: 10px 14px;
+  border-radius: var(--radius-lg);
+  line-height: 1.55;
+  word-wrap: break-word;
+  white-space: pre-wrap;
+}
+
+.msg[data-role="user"] .body {
+  background: var(--user-bg);
+  color: var(--user-fg);
+  align-self: flex-end;
+  max-width: 80%;
+  white-space: pre-wrap;
+}
+
+.msg[data-role="assistant"] .body {
+  background: var(--assistant-bg);
+  color: var(--assistant-fg);
+  border: 1px solid var(--border-subtle);
+  white-space: normal;
+}
+
+.msg[data-role="tool"] .body {
+  background: var(--bg-tertiary);
+  color: var(--code-fg);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  border: 1px dashed var(--border-subtle);
+}
+
+.body :global(pre) {
+  background: var(--code-bg);
+  color: var(--fg-primary);
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  overflow-x: auto;
+  font-size: 12px;
+}
+
+.body :global(code) {
+  background: var(--code-bg);
+  color: var(--code-fg);
+  padding: 1px 4px;
+  border-radius: var(--radius-sm);
+  font-size: 0.9em;
+}
+
+.body :global(pre code) {
+  background: transparent;
+  color: inherit;
+  padding: 0;
+}
+
+.body :global(a.entity-link) {
+  color: var(--intent);
+  background: rgba(70, 105, 255, 0.08);
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.body :global(a.entity-link:hover) {
+  background: rgba(70, 105, 255, 0.18);
+}
+
+.body :global(h1), .body :global(h2), .body :global(h3), .body :global(h4) {
+  margin: 8px 0 6px;
+  color: var(--fg-primary);
+}
+
+.body :global(ul), .body :global(ol) {
+  padding-left: 22px;
+}
+
+.body :global(table) {
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.body :global(th), .body :global(td) {
+  border: 1px solid var(--border-subtle);
+  padding: 4px 8px;
+  text-align: left;
+}
+
+.body :global(blockquote) {
+  border-left: 3px solid var(--border);
+  margin: 8px 0;
+  padding-left: 12px;
+  color: var(--fg-secondary);
+}
+
+.toolCalls {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.toolCall {
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 6px 10px;
+  font-size: 12px;
+}
+
+.toolCall summary {
+  cursor: pointer;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.toolCall summary code {
+  color: var(--code-fg);
+}
+
+.toolStatus[data-status="ok"] { color: var(--success); }
+.toolStatus[data-status="error"] { color: var(--danger); }
+.toolMs {
+  color: var(--fg-tertiary);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.toolArgs, .toolResult {
+  background: var(--code-bg);
+  margin: 6px 0 0;
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  max-height: 200px;
+  overflow: auto;
+  white-space: pre-wrap;
+}

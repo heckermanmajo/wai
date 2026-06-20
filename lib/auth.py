@@ -112,6 +112,12 @@ class UserContext:
     tenant_slug: str
     tenant_id: int
     tenant_role: str
+    platform_role: str = "none"  # Plan 06 — "admin" | "supporter" | "none"
+
+
+def is_debug_user_role(platform_role: str) -> bool:
+    """Plan 06 — admin und supporter duerfen den Debug-View nutzen."""
+    return platform_role in ("admin", "supporter")
 
 
 def _load_user_context(user_id: int, tenant_slug: str) -> UserContext | None:
@@ -151,6 +157,7 @@ def _load_user_context(user_id: int, tenant_slug: str) -> UserContext | None:
             tenant_slug=tenant.slug,
             tenant_id=tenant.id,
             tenant_role=membership.tenant_role,
+            platform_role=user.platform_role or "none",
         )
 
 
@@ -270,6 +277,20 @@ def _ctx_from_request(request: Request, slug: str) -> UserContext | None:
     return _load_user_context(data["user_id"], slug)
 
 
+def _ctx_from_cookie_only(request: Request) -> UserContext | None:
+    """Liest Session-Cookie ohne Slug-Bindung aus URL — Tenant kommt aus dem Cookie.
+
+    Genutzt vom /me-Endpoint, den der Next.js-Client vor jedem Tenant-Routing aufruft.
+    """
+    token = request.cookies.get(SESSION_COOKIE_NAME)
+    if not token:
+        return None
+    data = read_session_token(token)
+    if data is None:
+        return None
+    return _load_user_context(data["user_id"], data["tenant_slug"])
+
+
 def require_user(slug: str, request: Request) -> UserContext:
     """FastAPI-Dependency fuer JSON-Endpoints — wirft 401 bei Fehler."""
     ctx = _ctx_from_request(request, slug)
@@ -278,6 +299,69 @@ def require_user(slug: str, request: Request) -> UserContext:
     set_tenant(ctx.tenant_slug)
     set_user(ctx.user_id)
     return ctx
+
+
+@dataclass(frozen=True)
+class DebugUser:
+    """Plan 06 — Debug-View User-Kontext (kein Tenant aus URL-Path).
+
+    Memberships listet die Tenant-Slugs, auf die der User Zugriff hat.
+    Plattform-Admin sieht alle Tenants (memberships kann hier leer sein —
+    Caller prueft platform_role und reduziert ggf. nicht).
+    """
+    user_id: int
+    username: str
+    display_name: str
+    platform_role: str
+    memberships: list[str]
+
+
+def _load_debug_user(user_id: int) -> DebugUser | None:
+    with session_for_admin() as s:
+        user = s.scalar(
+            select(UserData).where(
+                UserData.id == user_id,
+                UserData.is_active.is_(True),
+                UserData.is_deleted.is_(False),
+            )
+        )
+        if user is None:
+            return None
+        if not is_debug_user_role(user.platform_role or "none"):
+            return None
+        rows = s.execute(
+            select(Tenant.slug)
+            .join(TenantMembership, TenantMembership.tenant_id == Tenant.id)
+            .where(
+                TenantMembership.user_id == user.id,
+                TenantMembership.is_active.is_(True),
+                TenantMembership.is_deleted.is_(False),
+                Tenant.is_active.is_(True),
+                Tenant.is_deleted.is_(False),
+            )
+        ).scalars().all()
+    return DebugUser(
+        user_id=user.id,
+        username=user.username,
+        display_name=user.display_name or user.username,
+        platform_role=user.platform_role or "none",
+        memberships=list(rows),
+    )
+
+
+def require_debug_user(request: Request) -> DebugUser:
+    """FastAPI-Dependency fuer Debug-View-Endpoints. 401 bei Logout, 403 bei fehlender Rolle."""
+    token = request.cookies.get(SESSION_COOKIE_NAME)
+    if not token:
+        raise HTTPException(status_code=401, detail="nicht eingeloggt")
+    data = read_session_token(token)
+    if data is None:
+        raise HTTPException(status_code=401, detail="nicht eingeloggt")
+    debug = _load_debug_user(data["user_id"])
+    if debug is None:
+        raise HTTPException(status_code=403, detail="kein Debug-View-Zugriff")
+    set_user(debug.user_id)
+    return debug
 
 
 def require_user_redirect(slug: str, request: Request) -> UserContext | RedirectResponse:

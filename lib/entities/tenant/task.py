@@ -19,6 +19,12 @@ from lib.polymorphic import register_entity
 class Task(BaseMixin, TenantBase):
     __tablename__ = "task"
 
+    RESOURCE_SYSTEM_EXPLANATION: str = (
+        "Eine Task ist eine Aufgabe mit Titel, Status (open/done/...), "
+        "Prioritaet und optionalem Faelligkeitsdatum. Sie kann polymorph "
+        "an eine andere Entity (Projekt, Deal, Contact) gehaengt sein."
+    )
+
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False, default="")
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="open")
@@ -27,3 +33,22 @@ class Task(BaseMixin, TenantBase):
     assignee_user_id: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     target_cls: Mapped[str] = mapped_column(String(64), nullable=False, default="")
     target_id: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+    def get_resource_type(self) -> str:
+        return "task"
+
+    def get_resource_name(self) -> str:
+        return (self.title or "").strip() or f"Task #{self.id}"
+
+    def get_resource_short(self) -> str:
+        return (self.title or "").strip()[:200]
+
+    def get_resource_markdown(self) -> str:
+        return (
+            f"# {self.title}\n\n"
+            f"Status: {self.status}\n\n"
+            f"{self.description or ''}"
+        )
+
+    def get_resource_url(self) -> str:
+        return f"/tasks/{self.id}"

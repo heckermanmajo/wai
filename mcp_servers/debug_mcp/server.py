@@ -48,6 +48,22 @@ REDACT_KEYS = {"api_key", "password", "password_hash", "token", "secret"}
 MAX_SAMPLE_LIMIT = 50
 
 
+@mcp.tool()
+def manifest() -> dict:
+    """Plan 05 — Self-Description (Vision §21). kind klassifiziert den MCP."""
+    tool_names = [
+        "list_entities", "describe_entity", "count_rows", "sample_rows",
+        "current_tenant_info", "recent_events", "ping",
+    ]
+    return {
+        "name": "wai-debug",
+        "version": VERSION,
+        "kind": "tool",
+        "description": "Lesende Introspektion ueber admin/logging/tenant-DBs.",
+        "tools": [{"name": n, "kind": "function"} for n in tool_names],
+    }
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------

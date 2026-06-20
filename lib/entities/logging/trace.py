@@ -23,6 +23,8 @@ from lib.mixins import BaseMixin
 class Trace(BaseMixin, LoggingBase):
     __tablename__ = "trace"
     __table_args__ = (UniqueConstraint("trace_uid", name="uq_trace_uid"),)
+    # Plan 04: Logging-Tabelle, kein Audit.
+    __change_log__ = False
 
     trace_uid: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
     tenant_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)

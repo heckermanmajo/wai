@@ -26,10 +26,11 @@ if str(_PROJECT_ROOT) not in sys.path:
 from lib.seed import ensure_admin_user  # noqa: E402
 
 DEV_PASSWORD = "123"
-DEV_USERS: list[tuple[str, str]] = [
-    # (username, display_name)
-    ("demo", "Demo Admin"),
-    ("alice", "Alice"),
+# Plan 06: demo-User ist Plattform-Admin (Debug-View global), alice Supporter.
+DEV_USERS: list[tuple[str, str, str]] = [
+    # (username, display_name, platform_role)
+    ("demo", "Demo Admin", "admin"),
+    ("alice", "Alice", "supporter"),
 ]
 
 
@@ -46,13 +47,14 @@ def main() -> int:
         print("[err] ADMIN_DB_URL ist nicht gesetzt — siehe docker-compose.yml", file=sys.stderr)
         return 2
 
-    for username, display_name in DEV_USERS:
+    for username, display_name, platform_role in DEV_USERS:
         ensure_admin_user(
             slug=args.tenant,
             username=username,
             password=DEV_PASSWORD,
             display_name=display_name,
             tenant_role="admin",
+            platform_role=platform_role,
         )
     print(f"[done] Dev-User in Tenant '{args.tenant}' geseedet (Passwort: {DEV_PASSWORD}).")
     return 0

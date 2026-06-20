@@ -31,6 +31,8 @@ class Event(BaseMixin, LoggingBase):
         UniqueConstraint("trace_uid", "sequence", name="uq_event_trace_seq"),
         Index("ix_event_trace_seq", "trace_uid", "sequence"),
     )
+    # Plan 04: Logging-Tabelle selbst nicht auditierbar (sonst Hen-Ei).
+    __change_log__ = False
 
     trace_uid: Mapped[str] = mapped_column(String(36), nullable=False)
     sequence: Mapped[int] = mapped_column(Integer, nullable=False)

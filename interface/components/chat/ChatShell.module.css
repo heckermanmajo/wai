@@ -1,0 +1,27 @@
+.app {
+  display: grid;
+  grid-template-rows: 1fr;
+  height: 100vh;
+  background: var(--bg-primary);
+  color: var(--fg-primary);
+  overflow: hidden;
+}
+
+.body {
+  display: grid;
+  grid-template-columns: var(--sidebar-width) 1fr var(--debug-width);
+  min-height: 0;
+}
+
+.app[data-debug-collapsed="1"] .body {
+  grid-template-columns: var(--sidebar-width) 1fr;
+}
+
+.main {
+  display: grid;
+  grid-template-rows: auto 1fr auto auto;
+  min-height: 0;
+  background: var(--bg-primary);
+  border-left: 1px solid var(--border-subtle);
+  border-right: 1px solid var(--border-subtle);
+}

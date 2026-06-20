@@ -154,6 +154,54 @@ services:
       timeout: 3s
       retries: 5
 
+  interface:
+    image: node:22-alpine
+    container_name: wai-interface
+    working_dir: /app
+    command: ["sh", "-c", "npm install --no-audit --no-fund && npm run dev"]
+    environment:
+      WAI_BACKEND_URL: http://gateway:8000
+      NODE_ENV: development
+    ports:
+      - "3000:3000"
+    depends_on:
+      - gateway
+    volumes:
+      - ./interface:/app
+      - interface-node-modules:/app/node_modules
+
+  sales_support:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: wai-sales-support
+    command: ["python", "-m", "agents.sales_support.server"]
+    environment:
+      WAI_TENANT_SLUG_DEFAULT: demo
+      ADMIN_DB_URL: postgresql+psycopg://wai:wai_dev@postgres:5432/admin_db
+      LOGGING_DB_URL: postgresql+psycopg://wai:wai_dev@postgres:5432/logging_db
+      TENANT_DB_URL_TEMPLATE: postgresql+psycopg://wai:wai_dev@postgres:5432/tenant_{slug}
+      MCP_CRM_URL: http://crm_mcp:8001/sse
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-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}
+      LOG_FILE: /app/logs/sales_support_mcp.log
+    ports:
+      - "8504:8001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      crm_mcp:
+        condition: service_started
+    volumes:
+      - ./agents:/app/agents
+      - ./mcp_servers:/app/mcp_servers
+      - ./lib:/app/lib
+      - ./logs:/app/logs
+    healthcheck:
+      test: ["CMD-SHELL", "python -c 'import socket,sys; s=socket.socket(); s.settimeout(2); sys.exit(0 if not s.connect_ex((\"localhost\", 8001)) else 1)'"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
   debug_mcp:
     build:
       context: .
@@ -186,3 +234,4 @@ volumes:
   minio-data:
   redis-data:
   pgadmin-data:
+  interface-node-modules:

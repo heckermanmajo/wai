@@ -17,6 +17,8 @@ from lib.mixins import BaseMixin
 
 class ErrorReport(BaseMixin, LoggingBase):
     __tablename__ = "error_report"
+    # Plan 04: Logging-Tabelle, kein Audit.
+    __change_log__ = False
 
     tenant_id: Mapped[str] = mapped_column(String(64), nullable=False, default="", index=True)
     session_id: Mapped[str] = mapped_column(String(64), nullable=False, default="", index=True)

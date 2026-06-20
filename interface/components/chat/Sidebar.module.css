@@ -1,0 +1,38 @@
+.sidebar {
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  background: var(--bg-secondary);
+  min-height: 0;
+  overflow: hidden;
+}
+
+.tabs {
+  display: flex;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.tabBtn {
+  flex: 1;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  padding: 10px 8px;
+  color: var(--fg-secondary);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.tabBtn[data-active="1"] {
+  color: var(--fg-primary);
+  border-bottom-color: var(--accent);
+}
+
+.tabBtn:hover {
+  background: var(--bg-tertiary);
+}
+
+.body {
+  overflow-y: auto;
+  min-height: 0;
+}

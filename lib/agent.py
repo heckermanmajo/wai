@@ -8,6 +8,11 @@ Emitter zu emittieren (damit SSE-Konsumenten sie live sehen) und den
 Sub-Trace in ``logging_db`` mit ``create_trace``/``finalize_trace``
 zu klammern.
 
+Plan 05 — MCP-Kind: zusaetzlich Discovery-/Routing-Helper. Jeder MCP
+exponiert ein ``manifest``-Tool mit ``kind in {tool, sub_agent, mixed}``.
+``lookup_tool_kind(name)`` liefert den Kind aus dem zentralen Cache, sodass
+der Manager nicht mehr hartkodiert ``if name == "sales_support"`` braucht.
+
 Aufrufer reicht eine async-Funktion ``fn`` rein, die die folgenden kwargs
 akzeptiert: ``sub_emitter``, ``sub_trace_uid``, ``sub_chat_id``,
 ``tenant_slug`` — plus seine eigentlichen Eingangs-Args. Der Helper
@@ -18,8 +23,13 @@ LLM zurückreicht.
 from __future__ import annotations
 
 import asyncio
+import json
+import os
 import time
 from typing import Awaitable, Callable
+
+from mcp import ClientSession
+from mcp.client.sse import sse_client
 
 from lib.db import session_for_tenant
 from lib.entities.tenant import AiChat
@@ -32,6 +42,116 @@ log = get_logger(__name__)
 
 TASK_BRIEF_PREVIEW_LEN = 200
 SUMMARY_PREVIEW_LEN = 300
+
+# ---------------------------------------------------------------------------
+# MCP-Endpoint-Registry + Discovery (Plan 05)
+# ---------------------------------------------------------------------------
+
+# Statische Registry — Discovery zur Laufzeit kommt erst in Welle 6.
+# Schluessel = logischer Name (frei waehlbar), Wert = SSE-URL.
+MCP_ENDPOINTS: list[tuple[str, str]] = [
+    ("crm", os.environ.get("MCP_CRM_URL", "http://crm_mcp:8001/sse")),
+    ("debug", os.environ.get("MCP_DEBUG_URL", "http://debug_mcp:8001/sse")),
+    ("mock", os.environ.get("MCP_MOCK_URL", "http://mcp_mock:8001/sse")),
+    ("sales_support",
+     os.environ.get("MCP_SALES_SUPPORT_URL", "http://sales_support:8001/sse")),
+]
+
+_MANIFEST_CACHE: dict[str, tuple[float, dict]] = {}
+_MANIFEST_TTL_SECONDS = 60.0
+
+
+async def fetch_manifest(url: str) -> dict:
+    """Holt den ``manifest()``-Tool-Output eines MCP-Servers.
+
+    Liefert ``{"status": "offline", "error": "..."}`` bei Verbindungsfehlern
+    — wichtig fuer den Debug-View, damit ein offline-MCP die Liste nicht
+    sprengt. Cache 60s.
+    """
+    now = time.monotonic()
+    cached = _MANIFEST_CACHE.get(url)
+    if cached is not None and cached[0] > now:
+        return cached[1]
+    try:
+        async with sse_client(url=url) as streams:
+            async with ClientSession(streams[0], streams[1]) as session:
+                await session.initialize()
+                result = await session.call_tool("manifest", {})
+                raw = " ".join(
+                    c.text for c in result.content if hasattr(c, "text")
+                )
+                try:
+                    parsed = json.loads(raw) if raw else {}
+                except json.JSONDecodeError:
+                    parsed = {"raw": raw}
+        if not isinstance(parsed, dict):
+            parsed = {"raw": parsed}
+        parsed.setdefault("status", "online")
+        _MANIFEST_CACHE[url] = (now + _MANIFEST_TTL_SECONDS, parsed)
+        return parsed
+    except Exception as exc:  # noqa: BLE001 — Discovery muss robust bleiben
+        log.warning("mcp_manifest_fetch_failed url=%s error=%s", url, exc)
+        offline = {
+            "status": "offline",
+            "url": url,
+            "error": str(exc),
+            "kind": "unknown",
+            "tools": [],
+        }
+        _MANIFEST_CACHE[url] = (now + _MANIFEST_TTL_SECONDS, offline)
+        return offline
+
+
+async def list_all_capabilities() -> dict[str, dict]:
+    """Discoveryt alle MCP_ENDPOINTS parallel und liefert {name: manifest}."""
+    tasks = [fetch_manifest(url) for _name, url in MCP_ENDPOINTS]
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+    out: dict[str, dict] = {}
+    for (name, url), res in zip(MCP_ENDPOINTS, results):
+        if isinstance(res, Exception):
+            out[name] = {"status": "offline", "url": url, "error": str(res),
+                         "kind": "unknown", "tools": []}
+        else:
+            out[name] = res
+    return out
+
+
+async def lookup_tool_kind(tool_name: str) -> str:
+    """Liefert 'function' | 'sub_agent' | 'mixed' fuer einen Tool-Namen.
+
+    Sucht in den gemergten Manifesten — pro Tool ist ``kind`` explizit
+    angegeben, fallback ist der MCP-Default-Kind.
+    """
+    caps = await list_all_capabilities()
+    for _name, manifest in caps.items():
+        if manifest.get("status") == "offline":
+            continue
+        default_kind = manifest.get("kind", "tool")
+        for t in manifest.get("tools", []):
+            if t.get("name") == tool_name:
+                tk = t.get("kind") or default_kind
+                # Plan 05 vereinheitlicht: tool == function.
+                return "function" if tk == "tool" else tk
+    return "function"
+
+
+async def find_endpoint_for_tool(tool_name: str) -> str | None:
+    """Liefert die SSE-URL eines MCP, der ``tool_name`` exposed."""
+    caps = await list_all_capabilities()
+    for name, manifest in caps.items():
+        if manifest.get("status") == "offline":
+            continue
+        for t in manifest.get("tools", []):
+            if t.get("name") == tool_name:
+                for n, url in MCP_ENDPOINTS:
+                    if n == name:
+                        return url
+    return None
+
+
+def reset_manifest_cache() -> None:
+    """Nur fuer Tests / manuelle Resets."""
+    _MANIFEST_CACHE.clear()
 
 
 def _read_parent_anchor(tenant_slug: str, parent_chat_id: int) -> tuple[str, int]:
@@ -183,3 +303,73 @@ async def emit_sub_agent_call(
     )
 
     return result_text, is_error
+
+
+async def _call_sub_agent_via_mcp(
+    task: str,
+    *,
+    sub_emitter: EventEmitter,
+    sub_trace_uid: str,
+    sub_chat_id: int,
+    tenant_slug: str,
+    user_id: int,
+    mcp_url: str,
+    tool_name: str,
+) -> str:
+    """Macht einen MCP-Tool-Call zu einem Sub-Agent-Server.
+
+    Wird als ``fn`` in ``emit_sub_agent_call`` verwendet, sodass der Manager
+    keinen Sonderpfad mehr braucht — der MCP-Call laeuft genauso
+    geklammert wie ein lokaler Funktions-Call.
+    """
+    sub_emitter.emit("mcp_connected", url=mcp_url, tool_names=[tool_name])
+    args = {
+        "task": task,
+        "tenant_slug": tenant_slug,
+        "sub_trace_uid": sub_trace_uid,
+        "sub_chat_id": int(sub_chat_id),
+        "user_id": int(user_id),
+    }
+    try:
+        async with sse_client(url=mcp_url) as streams:
+            async with ClientSession(streams[0], streams[1]) as session:
+                await session.initialize()
+                result = await session.call_tool(tool_name, args)
+                text = " ".join(c.text for c in result.content if hasattr(c, "text"))
+        return text
+    except (ConnectionRefusedError, OSError) as exc:
+        sub_emitter.emit("error", error_type="mcp_unreachable", message=str(exc))
+        return (
+            f"Sub-Agent {tool_name!r} nicht erreichbar ({mcp_url}): {exc!r}"
+        )
+
+
+async def invoke_sub_agent_via_mcp(
+    *,
+    parent_emitter: EventEmitter,
+    role: str,
+    parent_chat_id: int,
+    parent_tool_call_id: int,
+    tenant_slug: str,
+    user_id: int,
+    task: str,
+    mcp_url: str,
+    tool_name: str | None = None,
+) -> tuple[str, bool]:
+    """Sub-Agent-Lifecycle + MCP-Tool-Call statt lokalem Funktions-Call.
+
+    Plan 05 — der Manager nutzt das ueber den ``kind="sub_agent"``-Branch,
+    statt eines hartkodierten ``if name == "sales_support"``.
+    """
+    return await emit_sub_agent_call(
+        parent_emitter=parent_emitter,
+        role=role,
+        parent_chat_id=parent_chat_id,
+        parent_tool_call_id=parent_tool_call_id,
+        tenant_slug=tenant_slug,
+        user_id=user_id,
+        task=task,
+        fn=_call_sub_agent_via_mcp,
+        mcp_url=mcp_url,
+        tool_name=tool_name or role,
+    )

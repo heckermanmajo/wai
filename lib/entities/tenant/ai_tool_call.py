@@ -17,6 +17,8 @@ from lib.polymorphic import register_entity
 @register_entity("ai.tool_call")
 class AiToolCall(BaseMixin, TenantBase):
     __tablename__ = "ai_tool_call"
+    # Plan 04: Telemetrie, kein Audit-Wert.
+    __change_log__ = False
 
     message_id: Mapped[int] = mapped_column(Integer, nullable=False)
     tool_call_id: Mapped[str] = mapped_column(String(128), nullable=False)

@@ -24,8 +24,12 @@ from mcp import ClientSession
 from mcp.client.sse import sse_client
 
 from agents.manager.provider import get_client, get_tier1_model, get_tier2_model
-from agents.sales_support.agent import run_sales_support
-from lib.agent import emit_sub_agent_call
+from lib.agent import (
+    find_endpoint_for_tool,
+    invoke_sub_agent_via_mcp,
+    list_all_capabilities,
+    lookup_tool_kind,
+)
 from lib.chat_persist import load_history, persist_exchange
 from lib.db import session_for_tenant
 from lib.entities.tenant import AiChat
@@ -45,26 +49,79 @@ SYSTEM_PROMPT = (
 MAX_TOOL_ROUNDS = 5
 PREVIEW_LEN = 240
 
-SALES_SUPPORT_TOOL: dict = {
-    "type": "function",
-    "function": {
-        "name": "sales_support",
-        "description": (
-            "CRM-Spezialist — delegiere Fragen zu Kontakten, Leads, Deals, "
-            "Accounts, Pipelines oder Interaktionen an mich. Parameter: task (str)."
-        ),
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "task": {
-                    "type": "string",
-                    "description": "Auftrag fuer den sales_support in natuerlicher Sprache.",
-                }
+# Plan 05 — Tool-Definitionen fuer Sub-Agent-MCPs werden aus deren manifest()
+# dynamisch aufgebaut. SALES_SUPPORT_TOOL bleibt als Fallback-Definition,
+# falls die Discovery temporaer offline ist.
+SUB_AGENT_TOOL_FALLBACKS: list[dict] = [
+    {
+        "type": "function",
+        "function": {
+            "name": "sales_support",
+            "description": (
+                "CRM-Spezialist — delegiere Fragen zu Kontakten, Leads, Deals, "
+                "Accounts, Pipelines oder Interaktionen an mich. Parameter: task (str)."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "task": {
+                        "type": "string",
+                        "description": "Auftrag fuer den sales_support in natuerlicher Sprache.",
+                    }
+                },
+                "required": ["task"],
             },
-            "required": ["task"],
         },
     },
-}
+]
+
+
+def _sub_agent_tool_def(role: str, description: str) -> dict:
+    """Baut die OpenAI-Tool-Spec fuer einen Sub-Agent-Aufruf."""
+    return {
+        "type": "function",
+        "function": {
+            "name": role,
+            "description": description or f"Delegiere an Sub-Agent {role!r}. Parameter: task (str).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "task": {
+                        "type": "string",
+                        "description": f"Auftrag fuer {role} in natuerlicher Sprache.",
+                    }
+                },
+                "required": ["task"],
+            },
+        },
+    }
+
+
+async def _discover_sub_agent_tools() -> list[dict]:
+    """Sammelt Sub-Agent-Rollen aus allen MCP-Manifests."""
+    try:
+        caps = await list_all_capabilities()
+    except Exception:
+        return list(SUB_AGENT_TOOL_FALLBACKS)
+    out: list[dict] = []
+    seen: set[str] = set()
+    for _name, manifest in caps.items():
+        if manifest.get("status") == "offline":
+            continue
+        default_kind = manifest.get("kind", "tool")
+        for t in manifest.get("tools", []):
+            kind = t.get("kind") or default_kind
+            if kind != "sub_agent":
+                continue
+            role = t.get("name") or ""
+            if not role or role in seen:
+                continue
+            seen.add(role)
+            out.append(_sub_agent_tool_def(role, t.get("description", "")))
+    if not out:
+        # Fallback, damit der Manager auch ohne Discovery rufen kann.
+        return list(SUB_AGENT_TOOL_FALLBACKS)
+    return out
 
 def _emit(emitter: EventEmitter | None, event_type: str, **data) -> None:
     if emitter is None:
@@ -181,21 +238,33 @@ async def _dispatch_tool_call(
     parent_emitter: EventEmitter,
     parent_chat_id: int,
 ) -> tuple[str, bool]:
-    """sales_support läuft als Sub-Agent (Plan 02), alles andere als MCP-Tool. Gibt (text, is_error)."""
+    """Plan 05 — kind aus dem MCP-Manifest entscheidet, kein Sonderpfad mehr.
+
+    ``sub_agent`` → Lifecycle-Klammer + MCP-Tool-Call ueber den Sub-Agent-MCP.
+    ``function`` (Default) → normaler MCP-Tool-Call auf der bestehenden Session.
+    """
     try:
-        if name == "sales_support":
+        kind = await lookup_tool_kind(name)
+        if kind == "sub_agent":
             task = str(args.get("task") or "").strip()
             tenant_slug = get_tenant() or "demo"
             user_id = get_user() or 0
-            return await emit_sub_agent_call(
+            mcp_url = await find_endpoint_for_tool(name)
+            if not mcp_url:
+                return (
+                    f"Sub-Agent {name!r} hat keinen registrierten MCP-Endpoint.",
+                    True,
+                )
+            return await invoke_sub_agent_via_mcp(
                 parent_emitter=parent_emitter,
-                role="sales_support",
+                role=name,
                 parent_chat_id=parent_chat_id,
-                parent_tool_call_id=0,  # AiToolCall-Row existiert erst nach _persist_exchange
+                parent_tool_call_id=0,
                 tenant_slug=tenant_slug,
                 user_id=user_id,
                 task=task,
-                fn=run_sales_support,
+                mcp_url=mcp_url,
+                tool_name=name,
             )
         result = await session.call_tool(name, args)
         return " ".join(c.text for c in result.content if hasattr(c, "text")), False
@@ -319,13 +388,25 @@ async def _run_tool_round(
             args = {}
         _emit(emitter, "tool_call_started", tool_name=name, call_id=call_id, args=args)
         t_tool = time.monotonic()
-        if name == "sales_support" and emitter is None:
-            # Sub-Agent-Spawn braucht den Parent-Emitter für Lifecycle-Events.
-            text, is_error = "Tool-Fehler: sub_agent_spawn_ohne_emitter", True
+        # Plan 05: Sub-Agent-Spawn ueber jede registrierte sub_agent-Rolle
+        # braucht den Parent-Emitter fuer Lifecycle-Events. Wir muessen das
+        # nicht mehr namentlich pruefen — lookup_tool_kind() entscheidet, ob
+        # ein Sub-Agent-Pfad genommen wird; ohne Emitter koennen wir den
+        # nicht beschicken, also fallen wir auf einen reinen MCP-Call zurueck.
+        if emitter is None:
+            tool_kind = await lookup_tool_kind(name)
+            if tool_kind == "sub_agent":
+                text, is_error = "Tool-Fehler: sub_agent_spawn_ohne_emitter", True
+            else:
+                text, is_error = await _dispatch_tool_call(
+                    session, name, args,
+                    parent_emitter=emitter,  # type: ignore[arg-type]
+                    parent_chat_id=chat_id,
+                )
         else:
             text, is_error = await _dispatch_tool_call(
                 session, name, args,
-                parent_emitter=emitter,  # type: ignore[arg-type]
+                parent_emitter=emitter,
                 parent_chat_id=chat_id,
             )
         tool_duration_ms = int((time.monotonic() - t_tool) * 1000)
@@ -374,12 +455,19 @@ async def _run_tool_loop(
 ) -> tuple[str, list[dict]]:
     tool_list = (await session.list_tools()).tools
     tools = _to_openai_tools(tool_list)
-    tools.append(SALES_SUPPORT_TOOL)
+    # Plan 05: Sub-Agent-Tools kommen via Manifest-Discovery rein, nicht mehr
+    # manuell hartkodiert. Tools mit kind="sub_agent" werden als OpenAI-Tool
+    # exponiert — beim Aufruf greift _dispatch_tool_call den kind ab.
+    sub_agent_tools = await _discover_sub_agent_tools()
+    tools.extend(sub_agent_tools)
+    sub_agent_names = [
+        t.get("function", {}).get("name", "") for t in sub_agent_tools
+    ]
     _emit(
         emitter,
         "mcp_connected",
         url=MCP_LEAD_URL,
-        tool_names=[t.name for t in tool_list] + ["sales_support"],
+        tool_names=[t.name for t in tool_list] + sub_agent_names,
     )
     summary: list[dict] = []
     for i in range(MAX_TOOL_ROUNDS):

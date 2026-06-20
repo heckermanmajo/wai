@@ -1,0 +1,155 @@
+.tab {
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.fullBtn {
+  width: 100%;
+}
+
+.search {
+  width: 100%;
+}
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.empty {
+  color: var(--fg-tertiary);
+  font-size: 12px;
+  text-align: center;
+  padding: 20px 0;
+}
+
+.item {
+  background: var(--bg-tertiary);
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  padding: 8px 10px;
+  cursor: pointer;
+  display: grid;
+  gap: 2px;
+  position: relative;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.row .title {
+  flex: 1;
+  min-width: 0;
+}
+
+.item:hover {
+  background: var(--bg-quaternary);
+  border-color: var(--border-subtle);
+}
+
+.item[data-active="1"] {
+  border-color: var(--accent);
+  background: var(--bg-quaternary);
+}
+
+.title {
+  font-size: 13px;
+  color: var(--fg-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.meta {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+  font-size: 11px;
+  color: var(--fg-tertiary);
+}
+
+.metaItem {
+  font-family: var(--font-mono);
+}
+
+.badge {
+  background: rgba(70, 105, 255, 0.15);
+  color: var(--intent);
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.badge[data-kind="foreign"] {
+  background: rgba(240, 198, 116, 0.15);
+  color: var(--warning);
+}
+
+.actions {
+  display: flex;
+  gap: 4px;
+  justify-content: flex-end;
+  margin-top: 2px;
+}
+
+.actions button {
+  padding: 2px 6px;
+  font-size: 11px;
+  background: transparent;
+  border: 1px solid var(--border-subtle);
+}
+
+.actions button:hover {
+  background: var(--bg-primary);
+}
+
+.section {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--fg-tertiary);
+  padding: 4px 2px;
+}
+
+.artifact {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 6px 10px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  margin-bottom: 4px;
+  font-size: 12px;
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
+}
+
+.artifact:hover {
+  background: var(--bg-quaternary);
+}
+
+.artifact strong {
+  color: var(--fg-primary);
+}
+
+.artifact span {
+  color: var(--fg-tertiary);
+  font-size: 11px;
+  font-family: var(--font-mono);
+}

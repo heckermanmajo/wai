@@ -1,0 +1,143 @@
+.wrap {
+  border-top: 1px solid var(--border-subtle);
+  background: var(--bg-secondary);
+  position: relative;
+}
+
+.trigger {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 12px;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  color: var(--fg-primary);
+  font-size: 13px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.trigger:hover {
+  background: var(--bg-tertiary);
+}
+
+.avatar {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--bg-quaternary);
+  color: var(--fg-secondary);
+  display: grid;
+  place-items: center;
+  font-size: 12px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.userInfo {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.name {
+  color: var(--fg-primary);
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tenant {
+  color: var(--fg-tertiary);
+  font-size: 11px;
+  font-family: var(--font-mono);
+}
+
+.gear {
+  color: var(--fg-tertiary);
+  font-size: 14px;
+  flex-shrink: 0;
+}
+
+.errBadge {
+  margin-left: auto;
+  background: var(--danger-bg);
+  color: var(--danger);
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+}
+
+.backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  z-index: 50;
+  display: grid;
+  place-items: end start;
+}
+
+.panel {
+  position: absolute;
+  bottom: 56px;
+  left: 8px;
+  width: 240px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 6px;
+  z-index: 51;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.section {
+  padding: 8px 10px 4px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--fg-tertiary);
+}
+
+.item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 8px 10px;
+  background: transparent;
+  border: none;
+  color: var(--fg-primary);
+  font-size: 13px;
+  text-align: left;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.item:hover {
+  background: var(--bg-tertiary);
+  text-decoration: none;
+}
+
+.item[data-danger="1"] {
+  color: var(--danger);
+}
+
+.itemMeta {
+  color: var(--fg-tertiary);
+  font-size: 11px;
+  font-family: var(--font-mono);
+}
+
+.divider {
+  height: 1px;
+  background: var(--border-subtle);
+  margin: 4px 0;
+}

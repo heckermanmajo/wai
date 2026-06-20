@@ -1,0 +1,44 @@
+.stack {
+  position: fixed;
+  bottom: 16px;
+  right: 16px;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.toast {
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 8px 12px;
+  min-width: 220px;
+  max-width: 360px;
+  font-size: 13px;
+  pointer-events: auto;
+  cursor: pointer;
+  box-shadow: var(--shadow-md);
+}
+
+.toast[data-kind="ok"] {
+  border-left: 3px solid var(--success);
+}
+.toast[data-kind="error"] {
+  border-left: 3px solid var(--danger);
+}
+.toast[data-kind="info"] {
+  border-left: 3px solid var(--intent);
+}
+
+.toast strong {
+  color: var(--fg-primary);
+}
+
+.body {
+  color: var(--fg-secondary);
+  font-size: 12px;
+  margin-top: 2px;
+  word-break: break-word;
+}

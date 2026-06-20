@@ -1,0 +1,20 @@
+.scroll {
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.list {
+  max-width: 820px;
+  margin: 0 auto;
+  padding: var(--spacing-xl) var(--spacing-lg);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+}
+
+.empty {
+  display: grid;
+  place-items: center;
+  color: var(--fg-tertiary);
+  padding: 60px var(--spacing-lg);
+}

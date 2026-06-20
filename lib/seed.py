@@ -19,6 +19,7 @@ def ensure_admin_user(
     password: str,
     display_name: str = "",
     tenant_role: str = "admin",
+    platform_role: str = "none",
 ) -> None:
     """Legt UserData + TenantMembership an / synchronisiert Passwort.
 
@@ -26,6 +27,9 @@ def ensure_admin_user(
     - User wird neu angelegt oder Passwort wird ueberschrieben (idempotent
       heisst hier: gleiches Endpasswort, nicht "nichts tun bei Existenz").
     - Membership wird angelegt oder auf is_active=True gesetzt.
+    - ``platform_role`` (Plan 06) wird auf neuen User uebernommen ODER auf
+      bestehenden hochgesetzt, wenn der Default "none" ist. Bewusste
+      Downgrades macht der Seed nicht — admin bleibt admin.
     """
     with session_for_admin() as s:
         tenant = s.scalar(select(Tenant).where(Tenant.slug == slug))
@@ -38,15 +42,21 @@ def ensure_admin_user(
             user = UserData(
                 username=username,
                 password_hash=hash_password(password),
-                platform_role="none",
+                platform_role=platform_role,
                 is_active=True,
                 display_name=display_name or username,
             )
             s.add(user)
             s.flush()
-            print(f"[ok] UserData '{username}' angelegt (id={user.id})")
+            print(f"[ok] UserData '{username}' angelegt (id={user.id}, platform_role={platform_role})")
         else:
             user.password_hash = hash_password(password)
+            # Upgrade: none -> {supporter, admin}. Downgrade niemals.
+            if (user.platform_role or "none") == "none" and platform_role != "none":
+                user.platform_role = platform_role
+                print(
+                    f"[info] UserData '{username}' platform_role auf {platform_role} hochgesetzt"
+                )
             print(f"[info] UserData '{username}' existiert — Passwort wurde aktualisiert")
 
         membership = s.scalar(

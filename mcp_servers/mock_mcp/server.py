@@ -16,6 +16,24 @@ logger = get_logger(__name__)
 
 mcp = FastMCP("lead-manager-mock", host="0.0.0.0", port=8001)
 
+MCP_VERSION = "0.1.0"
+
+
+@mcp.tool()
+def manifest() -> dict:
+    """Plan 05 — Self-Description (Vision §21). kind klassifiziert den MCP."""
+    return {
+        "name": "lead-manager-mock",
+        "version": MCP_VERSION,
+        "kind": "tool",
+        "description": "Mock-Lead-Manager mit drei Demo-Tools auf einer in-memory KUNDEN_DB.",
+        "tools": [
+            {"name": "hole_kunden_status", "kind": "function"},
+            {"name": "erstelle_kunden_notiz", "kind": "function"},
+            {"name": "suche_kunden", "kind": "function"},
+        ],
+    }
+
 
 @mcp.tool()
 def hole_kunden_status(kunden_name: str) -> str:

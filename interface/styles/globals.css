@@ -1,0 +1,164 @@
+/* Globale Design-Tokens — 1:1 uebernommen aus gateway/ui_chat.py :root */
+:root {
+  color-scheme: dark;
+
+  --bg-primary: #0e0f12;
+  --bg-secondary: #0c0d10;
+  --bg-tertiary: #1a1c20;
+  --bg-quaternary: #16181d;
+  --bg-debug: #0a0b0e;
+
+  --fg-primary: #e8eaed;
+  --fg-secondary: #9aa0aa;
+  --fg-tertiary: #7c818b;
+
+  --border: #25262b;
+  --border-subtle: #1c1d22;
+  --border-darker: #23262d;
+
+  --accent: #4669ff;
+  --accent-hover: #5577ff;
+
+  --success: #7ed99c;
+  --warning: #f0c674;
+  --danger: #f08080;
+  --danger-bg: #2a1818;
+  --intent: #82b1ff;
+
+  --user-bg: #1f2532;
+  --user-fg: #cfe1ff;
+
+  --assistant-bg: #1a1c20;
+  --assistant-fg: #e8eaed;
+
+  --code-bg: #0c0d10;
+  --code-fg: #f0c674;
+
+  --font-mono: "SF Mono", ui-monospace, Menlo, monospace;
+  --font-sans: -apple-system, BlinkMacSystemFont, system-ui, "Segoe UI", sans-serif;
+  --font-size-base: 14px;
+  --line-height-base: 1.5;
+
+  --radius-sm: 3px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+
+  --spacing-xs: 4px;
+  --spacing-sm: 6px;
+  --spacing-md: 10px;
+  --spacing-lg: 12px;
+  --spacing-xl: 18px;
+
+  --shadow-md: 0 6px 22px rgba(0, 0, 0, 0.5);
+  --shadow-lg: 0 12px 40px rgba(0, 0, 0, 0.45);
+
+  --sidebar-width: 320px;
+  --debug-width: 380px;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: var(--bg-primary);
+  color: var(--fg-primary);
+  font-family: var(--font-sans);
+  font-size: var(--font-size-base);
+  line-height: var(--line-height-base);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+#__next,
+body > div:first-child {
+  min-height: 100%;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 6px 12px;
+  cursor: pointer;
+  transition: background 80ms ease, border-color 80ms ease;
+}
+
+button:hover {
+  background: var(--bg-quaternary);
+  border-color: var(--border);
+}
+
+button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+button.primary:hover {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+input,
+textarea,
+select {
+  font: inherit;
+  color: inherit;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-darker);
+  border-radius: var(--radius-md);
+  padding: 8px 10px;
+  outline: none;
+}
+
+input:focus,
+textarea:focus,
+select:focus {
+  border-color: var(--accent);
+}
+
+a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+code,
+pre {
+  font-family: var(--font-mono);
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--bg-secondary);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 5px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--fg-tertiary);
+}
