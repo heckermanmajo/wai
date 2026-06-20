@@ -29,16 +29,25 @@ from typing import AsyncIterator
 
 
 EVENT_TYPES = {
-    "trace_started",       # {tenant_id, user_message, history_len}
-    "intent_classified",   # {intent, model, duration_ms}
-    "mcp_connected",       # {url, tool_names: [str]}
-    "llm_request",         # {model, messages_count, has_tools, round}
-    "llm_response",        # {model, duration_ms, has_tool_calls, content_preview}
-    "tool_call_started",   # {tool_name, call_id, args}
-    "tool_call_result",    # {tool_name, call_id, duration_ms, result_preview, is_error}
-    "error",               # {error_type, message}
-    "trace_completed",     # {response, total_duration_ms, status}
+    "trace_started",        # {tenant_id, user_message, history_len}
+    "intent_classified",    # {intent, model, duration_ms}
+    "mcp_connected",        # {url, tool_names: [str]}
+    "llm_request",          # {model, messages_count, has_tools, round}
+    "llm_delta",            # {round, content_delta}  — Streaming-Chunks, NICHT persistiert
+    "llm_response",         # {model, duration_ms, has_tool_calls, content_preview}
+    "tool_call_started",    # {tool_name, call_id, args}
+    "tool_call_result",     # {tool_name, call_id, duration_ms, result_preview, is_error}
+    "error",                # {error_type, message}
+    "trace_completed",      # {response, total_duration_ms, status}
+    # Sub-Agent-Lifecycle (Plan 02)
+    "sub_agent_started",    # {role, parent_trace_uid, sub_trace_uid, sub_chat_id, task_brief}
+    "sub_agent_progress",   # {role, sub_trace_uid, status_text}  — volatile, best-effort
+    "sub_agent_completed",  # {role, sub_trace_uid, summary, duration_ms, status, outcome_preview}
 }
+
+# Events, die nur live zum Client gestreamt, aber nicht in logging_db persistiert
+# werden — typischerweise hochfrequente Streaming-Chunks oder Best-Effort-Status.
+VOLATILE_EVENT_TYPES = {"llm_delta", "sub_agent_progress"}
 
 
 def new_trace_uid() -> str:
@@ -97,6 +106,18 @@ class EventEmitter:
                 return
             yield ev
 
+    def forward(self, ev: Event) -> None:
+        """Fremdes Event 1:1 in die eigene Queue legen — ohne Re-Stamp.
+
+        Genutzt vom SubEventEmitter-Fan-Out: ein Sub-Event behält seine
+        sub_trace_uid + Sub-Sequence, der Parent-Stream zieht es nur durch
+        (für SSE-Auslieferung). Sequence-Counter des Parent-Emitters bleibt
+        unberührt — das vermischt sich bewusst nicht.
+        """
+        if self._closed:
+            return
+        self._queue.put_nowait(ev)
+
     def close(self) -> None:
         if self._closed:
             return
@@ -106,3 +127,31 @@ class EventEmitter:
     @property
     def event_count(self) -> int:
         return self._seq
+
+
+class SubEventEmitter(EventEmitter):
+    """EventEmitter für einen Sub-Agent — eigener Trace, Fan-Out zum Parent.
+
+    Sub-Agent bekommt eine eigene trace_uid (sub_trace_uid) und damit
+    eine eigene Sequenz + eigenen logging_db.trace-Row. Jedes emit() wird
+    zusätzlich in den Parent-Emitter ge-forwarded, damit der SSE-Stream
+    des laufenden Top-Level-Chats die Sub-Events live an den Client schickt.
+    Persistierung der Sub-Events läuft transparent über trace_uid des
+    Events selbst — die landen automatisch unter sub_trace_uid in
+    logging_db.event (volatile-Filter im Gateway gilt unverändert).
+    """
+
+    def __init__(
+        self,
+        sub_trace_uid: str,
+        tenant_id: str,
+        user_message: str,
+        parent_emitter: EventEmitter,
+    ) -> None:
+        super().__init__(sub_trace_uid, tenant_id, user_message)
+        self._parent = parent_emitter
+
+    def emit(self, event_type: str, **data) -> Event:
+        ev = super().emit(event_type, **data)
+        self._parent.forward(ev)
+        return ev

@@ -15,21 +15,23 @@ werden alle relevanten Übergänge (Intent, MCP-Connect, LLM-Calls, Tool-Calls,
 Errors) strukturiert emittiert — der SSE-Handler im Gateway streamt sie live
 an den Client und persistiert sie in logging_db.
 """
+import asyncio
 import json
 import os
 import time
 
 from mcp import ClientSession
 from mcp.client.sse import sse_client
-from sqlalchemy import select
 
 from agents.manager.provider import get_client, get_tier1_model, get_tier2_model
 from agents.sales_support.agent import run_sales_support
+from lib.agent import emit_sub_agent_call
+from lib.chat_persist import load_history, persist_exchange
 from lib.db import session_for_tenant
-from lib.entities.tenant import AiChat, AiMessage, AiToolCall, ChatArtifact
+from lib.entities.tenant import AiChat
 from lib.events import EventEmitter
 from lib.logging import get_logger
-from lib.tenant_context import get_tenant, set_actor
+from lib.tenant_context import get_tenant, get_user, set_actor
 
 log = get_logger(__name__)
 
@@ -64,22 +66,6 @@ SALES_SUPPORT_TOOL: dict = {
     },
 }
 
-# Tool-Name → (artifact_cls, arg_field_for_id_or_None, relation)
-# arg_field=None bedeutet: ID aus dem JSON-Result lesen (Feld "id").
-CRM_TOOL_ARTIFACT_MAP: dict[str, tuple[str, str | None, str]] = {
-    "contact_get": ("crm.contact", "id", "touched"),
-    "contact_upsert": ("crm.contact", None, "created"),
-    "account_get": ("crm.account", "id", "touched"),
-    "account_upsert": ("crm.account", None, "created"),
-    "lead_get": ("crm.lead", "id", "touched"),
-    "lead_create": ("crm.lead", None, "created"),
-    "lead_convert": ("crm.lead", "lead_id", "touched"),
-    "deal_get": ("crm.deal", "id", "touched"),
-    "deal_create": ("crm.deal", None, "created"),
-    "deal_advance_stage": ("crm.deal", "deal_id", "touched"),
-}
-
-
 def _emit(emitter: EventEmitter | None, event_type: str, **data) -> None:
     if emitter is None:
         return
@@ -101,176 +87,57 @@ def _usage(resp) -> dict:
     }
 
 
-def _load_history(chat_id: int, tenant_slug: str) -> list[dict]:
-    """Laedt alle bisherigen Messages eines Chats als OpenAI-style dicts."""
+async def _auto_title(user_message: str, assistant_response: str, emitter: EventEmitter | None = None) -> str:
+    """Erzeugt einen kurzen Chat-Titel (3-5 Worte) aus dem ersten Exchange."""
+    client = get_client()
+    model = get_tier1_model()
+    t0 = time.monotonic()
+    resp = await client.chat.completions.create(
+        model=model,
+        messages=[
+            {
+                "role": "system",
+                "content": (
+                    "Du erzeugst einen praegnanten Chat-Titel auf Deutsch — 3 bis 5 "
+                    "Woerter, keine Anfuehrungszeichen, kein Punkt am Ende, keine "
+                    "Emojis. Antworte NUR mit dem Titel."
+                ),
+            },
+            {
+                "role": "user",
+                "content": (
+                    f"User: {user_message[:400]}\n\n"
+                    f"Assistant: {assistant_response[:400]}\n\n"
+                    "Titel:"
+                ),
+            },
+        ],
+        temperature=0.3,
+        max_completion_tokens=24,
+    )
+    duration_ms = int((time.monotonic() - t0) * 1000)
+    raw = (resp.choices[0].message.content or "").strip().strip('"').strip("'")
+    raw = raw.splitlines()[0].strip() if raw else ""
+    if raw.endswith("."):
+        raw = raw[:-1].strip()
+    title = raw[:80] or "Neue Konversation"
+    _emit(emitter, "chat_title_generated", title=title, model=model, duration_ms=duration_ms, **_usage(resp))
+    return title
+
+
+def _maybe_update_chat_title(chat_id: int, tenant_slug: str, new_title: str) -> bool:
+    """Setzt den Chat-Titel, wenn er noch der Default ('Neuer Chat ...') ist."""
     with session_for_tenant(tenant_slug) as s:
-        rows = list(
-            s.scalars(
-                select(AiMessage)
-                .where(AiMessage.chat_id == chat_id, AiMessage.is_deleted.is_(False))
-                .order_by(AiMessage.id)
-            )
-        )
-        tool_call_rows = list(
-            s.scalars(
-                select(AiToolCall)
-                .where(
-                    AiToolCall.message_id.in_([r.id for r in rows]) if rows else False,
-                    AiToolCall.is_deleted.is_(False),
-                )
-                .order_by(AiToolCall.id)
-            )
-        ) if rows else []
-
-    calls_by_msg: dict[int, list[AiToolCall]] = {}
-    for tc in tool_call_rows:
-        calls_by_msg.setdefault(tc.message_id, []).append(tc)
-
-    history: list[dict] = []
-    for m in rows:
-        if m.role == "tool":
-            history.append({
-                "role": "tool",
-                "tool_call_id": m.tool_call_id,
-                "content": m.content,
-            })
-        elif m.role == "assistant":
-            tcs = calls_by_msg.get(m.id, [])
-            if tcs:
-                history.append({
-                    "role": "assistant",
-                    "content": m.content or None,
-                    "tool_calls": [
-                        {
-                            "id": tc.tool_call_id,
-                            "type": "function",
-                            "function": {
-                                "name": tc.tool_name,
-                                "arguments": tc.arguments_json or "{}",
-                            },
-                        }
-                        for tc in tcs
-                    ],
-                })
-            else:
-                history.append({"role": "assistant", "content": m.content})
-        else:
-            history.append({"role": m.role, "content": m.content})
-    return history
-
-
-def _extract_artifact(tool_name: str, args: dict, result_text: str) -> tuple[str, int, str] | None:
-    spec = CRM_TOOL_ARTIFACT_MAP.get(tool_name)
-    if spec is None:
-        return None
-    artifact_cls, arg_field, relation = spec
-    artifact_id: int | None = None
-    if arg_field is not None:
-        raw = args.get(arg_field)
-        if isinstance(raw, (int, str)) and str(raw).strip().isdigit():
-            artifact_id = int(raw)
-    if artifact_id is None and result_text:
-        try:
-            data = json.loads(result_text)
-        except (json.JSONDecodeError, ValueError):
-            data = None
-        if isinstance(data, dict):
-            cand = data.get("id")
-            if isinstance(cand, int):
-                artifact_id = cand
-            elif isinstance(cand, str) and cand.isdigit():
-                artifact_id = int(cand)
-    if artifact_id is None or artifact_id <= 0:
-        return None
-    return (artifact_cls, artifact_id, relation)
-
-
-def _persist_exchange(
-    chat_id: int,
-    tenant_slug: str,
-    user_message: str,
-    new_messages: list[dict],
-) -> None:
-    """Schreibt User-Message + alle vom Agent erzeugten Messages + ToolCalls in die DB.
-
-    new_messages: alle Eintraege ab der vom Agent erzeugten User-Message
-    (system + history werden NICHT mit uebergeben — Caller schneidet ab).
-    """
-    with session_for_tenant(tenant_slug) as s:
-        seen_artifact_keys: set[tuple[str, int]] = set()
-        existing_artifacts = s.scalars(
-            select(ChatArtifact).where(
-                ChatArtifact.chat_id == chat_id,
-                ChatArtifact.is_deleted.is_(False),
-            )
-        )
-        for ea in existing_artifacts:
-            seen_artifact_keys.add((ea.artifact_cls, ea.artifact_id))
-
-        s.add(AiMessage(chat_id=chat_id, role="user", content=user_message))
-        s.flush()
-
-        assistant_msg_id: int | None = None
-        pending_tool_calls: dict[str, AiToolCall] = {}
-
-        for entry in new_messages:
-            role = entry.get("role")
-            if role == "user":
-                continue  # bereits oben persistiert
-            if role == "assistant":
-                content = entry.get("content") or ""
-                tcs = entry.get("tool_calls") or []
-                am = AiMessage(chat_id=chat_id, role="assistant", content=content)
-                s.add(am)
-                s.flush()
-                assistant_msg_id = am.id
-                pending_tool_calls = {}
-                for tc in tcs:
-                    fn = tc.get("function") or {}
-                    tc_row = AiToolCall(
-                        message_id=assistant_msg_id,
-                        tool_call_id=str(tc.get("id") or ""),
-                        tool_name=str(fn.get("name") or ""),
-                        arguments_json=str(fn.get("arguments") or "{}"),
-                        result_text="",
-                        status="pending",
-                        duration_ms=0,
-                    )
-                    s.add(tc_row)
-                    pending_tool_calls[tc_row.tool_call_id] = tc_row
-                s.flush()
-            elif role == "tool":
-                tc_id = str(entry.get("tool_call_id") or "")
-                content = entry.get("content") or ""
-                tc_row = pending_tool_calls.get(tc_id)
-                if tc_row is not None:
-                    tc_row.result_text = content
-                    tc_row.status = "ok"
-                s.add(AiMessage(
-                    chat_id=chat_id,
-                    role="tool",
-                    content=content,
-                    tool_call_id=tc_id,
-                    tool_name=tc_row.tool_name if tc_row else "",
-                ))
-                if tc_row is not None:
-                    try:
-                        args = json.loads(tc_row.arguments_json or "{}")
-                    except json.JSONDecodeError:
-                        args = {}
-                    found = _extract_artifact(tc_row.tool_name, args, content)
-                    if found is not None:
-                        cls_, aid, rel = found
-                        if (cls_, aid) not in seen_artifact_keys:
-                            s.add(ChatArtifact(
-                                chat_id=chat_id,
-                                artifact_cls=cls_,
-                                artifact_id=aid,
-                                relation=rel,
-                            ))
-                            seen_artifact_keys.add((cls_, aid))
-
+        chat = s.get(AiChat, chat_id)
+        if chat is None or chat.is_deleted:
+            return False
+        current = (chat.title or "").strip()
+        # Default-Titel oder leer ueberschreiben — alles andere unberuehrt lassen
+        if current and not current.startswith("Neuer Chat "):
+            return False
+        chat.title = new_title
         s.commit()
+        return True
 
 
 async def classify_intent(user_message: str, emitter: EventEmitter | None = None) -> str:
@@ -306,22 +173,101 @@ def _to_openai_tools(mcp_tools: list) -> list[dict]:
     ]
 
 
-def _build_tool_call_msg(tc) -> dict:
-    return {"id": tc.id, "type": tc.type, "function": {"name": tc.function.name, "arguments": tc.function.arguments}}
-
-
-async def _dispatch_tool_call(session: ClientSession, name: str, args: dict) -> tuple[str, bool]:
-    """sales_support läuft als Sub-Agent, alles andere als MCP-Tool. Gibt (text, is_error)."""
+async def _dispatch_tool_call(
+    session: ClientSession,
+    name: str,
+    args: dict,
+    *,
+    parent_emitter: EventEmitter,
+    parent_chat_id: int,
+) -> tuple[str, bool]:
+    """sales_support läuft als Sub-Agent (Plan 02), alles andere als MCP-Tool. Gibt (text, is_error)."""
     try:
         if name == "sales_support":
             task = str(args.get("task") or "").strip()
             tenant_slug = get_tenant() or "demo"
-            return await run_sales_support(task, tenant_slug=tenant_slug), False
+            user_id = get_user() or 0
+            return await emit_sub_agent_call(
+                parent_emitter=parent_emitter,
+                role="sales_support",
+                parent_chat_id=parent_chat_id,
+                parent_tool_call_id=0,  # AiToolCall-Row existiert erst nach _persist_exchange
+                tenant_slug=tenant_slug,
+                user_id=user_id,
+                task=task,
+                fn=run_sales_support,
+            )
         result = await session.call_tool(name, args)
         return " ".join(c.text for c in result.content if hasattr(c, "text")), False
     except Exception as exc:
         log.warning("tool_call_failed name=%s error=%s", name, exc)
         return f"Tool-Fehler: {exc!r}", True
+
+
+async def _stream_completion(
+    *,
+    model: str,
+    messages: list,
+    tools: list[dict] | None,
+    emitter: EventEmitter | None,
+    round_idx: int,
+) -> tuple[str, list[dict], dict]:
+    """Async-streamt eine Chat-Completion und aggregiert Content + Tool-Calls.
+
+    Emittiert pro Text-Chunk ein 'llm_delta'-Event (volatile, nicht persistiert).
+    Liefert (content, tool_calls_openai_style, usage_dict).
+    """
+    client = get_client()
+    kwargs: dict = {
+        "model": model,
+        "messages": messages,
+        "stream": True,
+        "stream_options": {"include_usage": True},
+    }
+    if tools:
+        kwargs["tools"] = tools
+
+    stream = await client.chat.completions.create(**kwargs)
+    content_parts: list[str] = []
+    # Akku fuer Tool-Calls (per index sammeln, da Argumente fragmentiert kommen)
+    tool_acc: dict[int, dict] = {}
+    usage: dict = {"prompt_tokens": None, "completion_tokens": None}
+
+    async for chunk in stream:
+        chunk_usage = getattr(chunk, "usage", None)
+        if chunk_usage is not None:
+            usage["prompt_tokens"] = getattr(chunk_usage, "prompt_tokens", None)
+            usage["completion_tokens"] = getattr(chunk_usage, "completion_tokens", None)
+        if not chunk.choices:
+            continue
+        delta = chunk.choices[0].delta
+        if getattr(delta, "content", None):
+            content_parts.append(delta.content)
+            _emit(emitter, "llm_delta", round=round_idx, content_delta=delta.content)
+        tcs = getattr(delta, "tool_calls", None) or []
+        for tc in tcs:
+            slot = tool_acc.setdefault(
+                tc.index, {"id": "", "type": "function", "name": "", "arguments": ""}
+            )
+            if getattr(tc, "id", None):
+                slot["id"] = tc.id
+            fn = getattr(tc, "function", None)
+            if fn is not None:
+                if getattr(fn, "name", None):
+                    slot["name"] += fn.name
+                if getattr(fn, "arguments", None):
+                    slot["arguments"] += fn.arguments
+
+    tool_calls_out = [
+        {
+            "id": slot["id"],
+            "type": slot["type"],
+            "function": {"name": slot["name"], "arguments": slot["arguments"] or "{}"},
+        }
+        for _idx, slot in sorted(tool_acc.items())
+        if slot["name"]
+    ]
+    return "".join(content_parts), tool_calls_out, usage
 
 
 async def _run_tool_round(
@@ -330,69 +276,82 @@ async def _run_tool_round(
     tools: list[dict],
     emitter: EventEmitter | None,
     round_idx: int,
+    *,
+    chat_id: int,
 ) -> tuple[list[dict], list[dict]]:
-    client = get_client()
     model = get_tier2_model()
 
     _emit(emitter, "llm_request", model=model, messages_count=len(messages), has_tools=bool(tools), round=round_idx)
     t0 = time.monotonic()
-    resp = await client.chat.completions.create(model=model, messages=messages, tools=tools)
+    content, tool_calls, usage = await _stream_completion(
+        model=model, messages=messages, tools=tools, emitter=emitter, round_idx=round_idx,
+    )
     duration_ms = int((time.monotonic() - t0) * 1000)
-    choice = resp.choices[0].message
     _emit(
         emitter,
         "llm_response",
         model=model,
         duration_ms=duration_ms,
-        has_tool_calls=bool(choice.tool_calls),
-        content_preview=_preview(choice.content),
+        has_tool_calls=bool(tool_calls),
+        content_preview=_preview(content),
         round=round_idx,
-        **_usage(resp),
+        **usage,
     )
 
-    if not choice.tool_calls:
-        return messages + [{"role": "assistant", "content": choice.content or ""}], []
+    if not tool_calls:
+        return messages + [{"role": "assistant", "content": content or ""}], []
 
     msg = {
         "role": "assistant",
-        "content": choice.content,
-        "tool_calls": [_build_tool_call_msg(tc) for tc in choice.tool_calls],
+        "content": content,
+        "tool_calls": tool_calls,
     }
     messages.append(msg)
 
     round_summary: list[dict] = []
-    for tc in choice.tool_calls:
+    for tc in tool_calls:
+        fn = tc.get("function") or {}
+        name = fn.get("name") or ""
+        call_id = tc.get("id") or ""
         try:
-            args = json.loads(tc.function.arguments or "{}")
+            args = json.loads(fn.get("arguments") or "{}")
         except json.JSONDecodeError:
             args = {}
-        _emit(emitter, "tool_call_started", tool_name=tc.function.name, call_id=tc.id, args=args)
+        _emit(emitter, "tool_call_started", tool_name=name, call_id=call_id, args=args)
         t_tool = time.monotonic()
-        text, is_error = await _dispatch_tool_call(session, tc.function.name, args)
+        if name == "sales_support" and emitter is None:
+            # Sub-Agent-Spawn braucht den Parent-Emitter für Lifecycle-Events.
+            text, is_error = "Tool-Fehler: sub_agent_spawn_ohne_emitter", True
+        else:
+            text, is_error = await _dispatch_tool_call(
+                session, name, args,
+                parent_emitter=emitter,  # type: ignore[arg-type]
+                parent_chat_id=chat_id,
+            )
         tool_duration_ms = int((time.monotonic() - t_tool) * 1000)
         _emit(
             emitter,
             "tool_call_result",
-            tool_name=tc.function.name,
-            call_id=tc.id,
+            tool_name=name,
+            call_id=call_id,
             duration_ms=tool_duration_ms,
             result_preview=_preview(text),
             is_error=is_error,
         )
-        messages.append({"role": "tool", "tool_call_id": tc.id, "content": text})
-        round_summary.append({"name": tc.function.name, "args": args})
+        messages.append({"role": "tool", "tool_call_id": call_id, "content": text})
+        round_summary.append({"name": name, "args": args})
 
     return messages, round_summary
 
 
 async def _handle_general_chat(messages: list, emitter: EventEmitter | None) -> str:
-    client = get_client()
     model = get_tier2_model()
     _emit(emitter, "llm_request", model=model, messages_count=len(messages), has_tools=False, round=0)
     t0 = time.monotonic()
-    resp = await client.chat.completions.create(model=model, messages=messages)
+    content, _tool_calls, usage = await _stream_completion(
+        model=model, messages=messages, tools=None, emitter=emitter, round_idx=0,
+    )
     duration_ms = int((time.monotonic() - t0) * 1000)
-    content = resp.choices[0].message.content or ""
     _emit(
         emitter,
         "llm_response",
@@ -401,7 +360,7 @@ async def _handle_general_chat(messages: list, emitter: EventEmitter | None) -> 
         has_tool_calls=False,
         content_preview=_preview(content),
         round=0,
-        **_usage(resp),
+        **usage,
     )
     return content
 
@@ -410,6 +369,8 @@ async def _run_tool_loop(
     session: ClientSession,
     messages: list,
     emitter: EventEmitter | None,
+    *,
+    chat_id: int,
 ) -> tuple[str, list[dict]]:
     tool_list = (await session.list_tools()).tools
     tools = _to_openai_tools(tool_list)
@@ -422,7 +383,9 @@ async def _run_tool_loop(
     )
     summary: list[dict] = []
     for i in range(MAX_TOOL_ROUNDS):
-        messages, round_summary = await _run_tool_round(session, messages, tools, emitter, round_idx=i + 1)
+        messages, round_summary = await _run_tool_round(
+            session, messages, tools, emitter, round_idx=i + 1, chat_id=chat_id,
+        )
         summary.extend(round_summary)
         last = messages[-1]
         if last["role"] == "assistant" and not last.get("tool_calls"):
@@ -430,12 +393,17 @@ async def _run_tool_loop(
     return messages[-1].get("content", ""), summary
 
 
-async def _handle_lead_chat(messages: list, emitter: EventEmitter | None) -> tuple[str, list[dict]]:
+async def _handle_lead_chat(
+    messages: list,
+    emitter: EventEmitter | None,
+    *,
+    chat_id: int,
+) -> tuple[str, list[dict]]:
     try:
         async with sse_client(url=MCP_LEAD_URL) as streams:
             async with ClientSession(streams[0], streams[1]) as session:
                 await session.initialize()
-                return await _run_tool_loop(session, messages, emitter)
+                return await _run_tool_loop(session, messages, emitter, chat_id=chat_id)
     except (ConnectionRefusedError, OSError) as exc:
         log.warning("mcp_unreachable url=%s error=%s", MCP_LEAD_URL, exc)
         _emit(emitter, "error", error_type="mcp_unreachable", message=str(exc))
@@ -462,7 +430,7 @@ async def chat(
             raise PermissionError(f"User {user_id} darf AiChat {chat_id} nicht beschreiben")
 
     started = time.monotonic()
-    history = _load_history(chat_id, tenant_slug)
+    history = load_history(chat_id, tenant_slug)
     log.info(
         "chat.start tenant=%s chat_id=%d user_id=%d user_msg=%r history_len=%d",
         tenant_slug, chat_id, user_id, user_message, len(history),
@@ -491,14 +459,23 @@ async def chat(
         messages = messages + [{"role": "assistant", "content": answer}]
         tool_calls_summary: list[dict] = []
     else:
-        answer, tool_calls_summary = await _handle_lead_chat(messages, emitter)
+        answer, tool_calls_summary = await _handle_lead_chat(messages, emitter, chat_id=chat_id)
 
     new_messages = messages[new_msg_start_index:]
 
     try:
-        _persist_exchange(chat_id, tenant_slug, user_message, new_messages)
+        persist_exchange(chat_id, tenant_slug, user_message, new_messages)
     except Exception:  # noqa: BLE001 — persistence-fail darf den Response nicht killen
         log.exception("persist_exchange_failed chat_id=%d", chat_id)
+
+    # Erste Antwort -> automatischer Titel. Nur ausloesen, wenn keine History vor diesem
+    # Exchange existierte (i.e. dies war die erste User-Message des Chats).
+    if not history and answer and answer.strip():
+        try:
+            new_title = await _auto_title(user_message, answer, emitter)
+            await asyncio.to_thread(_maybe_update_chat_title, chat_id, tenant_slug, new_title)
+        except Exception:  # noqa: BLE001 — Titel-Fail darf den Response nicht killen
+            log.exception("auto_title_failed chat_id=%d", chat_id)
 
     duration_ms = int((time.monotonic() - started) * 1000)
     log.info(
