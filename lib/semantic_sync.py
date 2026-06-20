@@ -328,11 +328,13 @@ def register_sync_listeners() -> None:
     # Entities-Paket am Ende des __init__ aufgerufen).
     from lib.entities.tenant.document import Document
     from lib.entities.tenant.note import Note
+    from lib.entities.tenant.process import Process
     from lib.entities.tenant.task import Task
 
     pairs: Iterable[tuple[type, str]] = (
         (Document, "core.document"),
         (Note, "core.note"),
+        (Process, "core.process"),
         (Task, "core.task"),
     )
     for cls, alias in pairs:

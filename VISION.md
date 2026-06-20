@@ -18,7 +18,7 @@ Die Plattform ist ein **AI-natives Arbeitssystem**: minimalistische UI, der Gro�
 
 ## 1. Projekte und Vorgänge — die zwei Arbeits-Klammern
 
-**Status:** Projekt teilweise (es gibt `Project` in `lib/entities/tenant/project.py`), Vorgang fehlt komplett.
+**Status:** Projekt teilweise (es gibt `Project` in `lib/entities/tenant/project.py`). Vorgang als V1 vorhanden (`Process` in `lib/entities/tenant/process.py`, MCP `process_mcp`, Plan 07 umgesetzt 2026-06-20) — fehlt für die End-Stufe noch: fachliche Events am Vorgang (§2), Milestones (§5), Workflow-Bindung (§7), Listing/Timeline-UI (mit Explorer §18 / Visualisierung §11).
 
 ### Entscheidung: Projekt und Vorgang werden semantisch getrennt
 
@@ -44,7 +44,7 @@ Auch wenn beides technisch ähnlich aussieht (nestbar, mit Notizen/Tasks/Events 
 
 ### Was zu klären ist
 - Brauchen wir noch eine dritte Ebene über Projekt (Programm/Portfolio)? — vermutlich nein, das geht über Projekt-Nesting.
-- `Project` bleibt der bestehende Code-Name; `Vorgang` wird als neue Entität `Process` (oder `Case`?) angelegt — Code-Name müssen wir noch festlegen.
+- ~~`Project` bleibt der bestehende Code-Name; `Vorgang` wird als neue Entität `Process` (oder `Case`?) angelegt — Code-Name müssen wir noch festlegen.~~ → entschieden mit Plan 07: Class-Name `Process`, Alias `core.process`.
 
 ---
 

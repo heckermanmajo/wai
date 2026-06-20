@@ -26,6 +26,7 @@ from lib.entities.tenant.crm import (
     Stage,
 )
 from lib.entities.tenant.note import Note
+from lib.entities.tenant.process import Process
 from lib.entities.tenant.project import Project
 from lib.entities.tenant.reminder import Reminder
 from lib.entities.tenant.semantic_fassade import SemanticFassade
@@ -51,6 +52,7 @@ __all__ = [
     "Lead",
     "Note",
     "Pipeline",
+    "Process",
     "Project",
     "Reminder",
     "SemanticFassade",

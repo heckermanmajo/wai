@@ -53,6 +53,7 @@ MCP_ENDPOINTS: list[tuple[str, str]] = [
     ("crm", os.environ.get("MCP_CRM_URL", "http://crm_mcp:8001/sse")),
     ("debug", os.environ.get("MCP_DEBUG_URL", "http://debug_mcp:8001/sse")),
     ("mock", os.environ.get("MCP_MOCK_URL", "http://mcp_mock:8001/sse")),
+    ("process", os.environ.get("MCP_PROCESS_URL", "http://process_mcp:8001/sse")),
     ("sales_support",
      os.environ.get("MCP_SALES_SUPPORT_URL", "http://sales_support:8001/sse")),
 ]

@@ -39,6 +39,17 @@ PLATFORM_DEFAULTS: dict[str, Any] = {
     "agent.sub_chat.max_depth": 5,
     "agent.model.default": "gpt-5.5",
     "audit.change_log.retention_days": 365,
+    # Plan 07 — erlaubte Process-Status-Werte. process_mcp validiert dagegen.
+    # Tenant/Workflow-Engine §7 koennen das spaeter ueberschreiben.
+    "process.status.allowed_values": [
+        "neu",
+        "in_arbeit",
+        "wartet_auf_kunde",
+        "wartet_intern",
+        "abgeschlossen",
+        "abgebrochen",
+    ],
+    "process.status.closed_values": ["abgeschlossen", "abgebrochen"],
 }
 
 VALID_SCOPES = ("platform", "tenant", "entity_type", "entity", "chat")
