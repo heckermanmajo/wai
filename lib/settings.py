@@ -50,6 +50,17 @@ PLATFORM_DEFAULTS: dict[str, Any] = {
         "abgebrochen",
     ],
     "process.status.closed_values": ["abgeschlossen", "abgebrochen"],
+    # Plan 08 — Auto-Event-Whitelist je target_cls. Listener in
+    # lib/audit_to_event.py liest dieses Setting und materialisiert pro
+    # passendem EntityChange ein BusinessEvent. Pro Tenant via set_value
+    # (scope="tenant" oder "entity_type") ueberschreibbar.
+    "events.auto_rules.core.process": [
+        {
+            "field": "status",
+            "event_type": "status_changed",
+            "title_template": "Status: {old} → {new}",
+        },
+    ],
 }
 
 VALID_SCOPES = ("platform", "tenant", "entity_type", "entity", "chat")

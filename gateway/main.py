@@ -103,6 +103,7 @@ from lib.storage import (
 )
 from lib.polymorphic import validate_target
 from lib.audit import install_change_log_hooks, list_entity_changes
+from lib.audit_to_event import install_event_hooks
 from lib.settings import settings_cache_reset
 from lib.tenant_context import set_tenant, set_trace_uid
 from lib.transcribe import transcribe
@@ -124,6 +125,10 @@ log = get_logger(__name__)
 
 # Plan 04 — Change-Log-Hooks bei Modul-Import installieren. Idempotent.
 install_change_log_hooks()
+# Plan 08 — Auto-Event-Listener REIHENFOLGE-KRITISCH: muss nach
+# install_change_log_hooks() laufen, damit unser after_commit-Hook nach
+# audit._after_commit feuert und den committed-Snapshot findet.
+install_event_hooks()
 
 app = FastAPI(title="wai gateway", version="0.2.0")
 

@@ -326,12 +326,14 @@ def register_sync_listeners() -> None:
 
     # Importe hier drin, um Zirkel zu vermeiden (semantic_sync wird vom
     # Entities-Paket am Ende des __init__ aufgerufen).
+    from lib.entities.tenant.business_event import BusinessEvent
     from lib.entities.tenant.document import Document
     from lib.entities.tenant.note import Note
     from lib.entities.tenant.process import Process
     from lib.entities.tenant.task import Task
 
     pairs: Iterable[tuple[type, str]] = (
+        (BusinessEvent, "core.event"),
         (Document, "core.document"),
         (Note, "core.note"),
         (Process, "core.process"),

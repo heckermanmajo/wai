@@ -229,6 +229,33 @@ services:
       timeout: 3s
       retries: 5
 
+  events_mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: wai-events-mcp
+    command: ["python", "-m", "mcp_servers.events_mcp.server"]
+    environment:
+      WAI_TENANT_SLUG_DEFAULT: demo
+      ADMIN_DB_URL: postgresql+psycopg://wai:wai_dev@postgres:5432/admin_db
+      LOGGING_DB_URL: postgresql+psycopg://wai:wai_dev@postgres:5432/logging_db
+      TENANT_DB_URL_TEMPLATE: postgresql+psycopg://wai:wai_dev@postgres:5432/tenant_{slug}
+      LOG_FILE: /app/logs/events_mcp.log
+    ports:
+      - "8506:8001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./mcp_servers:/app/mcp_servers
+      - ./lib:/app/lib
+      - ./logs:/app/logs
+    healthcheck:
+      test: ["CMD-SHELL", "python -c 'import socket,sys; s=socket.socket(); s.settimeout(2); sys.exit(0 if not s.connect_ex((\"localhost\", 8001)) else 1)'"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
   debug_mcp:
     build:
       context: .

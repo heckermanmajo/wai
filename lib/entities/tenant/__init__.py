@@ -12,6 +12,7 @@ from lib.entities.tenant.ai_chat import AiChat
 from lib.entities.tenant.ai_message import AiMessage
 from lib.entities.tenant.ai_tool_call import AiToolCall
 from lib.entities.tenant.attachment import Attachment
+from lib.entities.tenant.business_event import BusinessEvent
 from lib.entities.tenant.chat_artifact import ChatArtifact
 from lib.entities.tenant.comment import Comment
 from lib.entities.tenant.document import Document
@@ -42,6 +43,7 @@ __all__ = [
     "AiMessage",
     "AiToolCall",
     "Attachment",
+    "BusinessEvent",
     "ChatArtifact",
     "Comment",
     "Contact",

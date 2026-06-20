@@ -18,7 +18,7 @@ Die Plattform ist ein **AI-natives Arbeitssystem**: minimalistische UI, der Gro�
 
 ## 1. Projekte und Vorgänge — die zwei Arbeits-Klammern
 
-**Status:** Projekt teilweise (es gibt `Project` in `lib/entities/tenant/project.py`). Vorgang als V1 vorhanden (`Process` in `lib/entities/tenant/process.py`, MCP `process_mcp`, Plan 07 umgesetzt 2026-06-20) — fehlt für die End-Stufe noch: fachliche Events am Vorgang (§2), Milestones (§5), Workflow-Bindung (§7), Listing/Timeline-UI (mit Explorer §18 / Visualisierung §11).
+**Status:** Projekt teilweise (es gibt `Project` in `lib/entities/tenant/project.py`). Vorgang als V1 vorhanden (`Process` in `lib/entities/tenant/process.py`, MCP `process_mcp`, Plan 07 umgesetzt 2026-06-20). Fachliche Events am Vorgang als V1 vorhanden (`BusinessEvent` + `events_mcp`, Plan 08 umgesetzt 2026-06-20, siehe §2). Fehlt für die End-Stufe noch: Milestones (§5), Workflow-Bindung (§7), Listing/Timeline-UI (mit Explorer §18 / Visualisierung §11).
 
 ### Entscheidung: Projekt und Vorgang werden semantisch getrennt
 
@@ -50,7 +50,7 @@ Auch wenn beides technisch ähnlich aussieht (nestbar, mit Notizen/Tasks/Events 
 
 ## 2. Events auf Vorgängen
 
-**Status:** teilweise — es gibt Events im Logging-Layer (`lib/events.py`, `lib/entities/logging/event.py`), aber keine fachlichen, am Vorgang hängenden Events.
+**Status:** V1 vorhanden — `BusinessEvent` in `lib/entities/tenant/business_event.py` (Tabelle `event`, Alias `core.event`), MCP `events_mcp` (Port 8506), Helper `lib/business_events.py`, Auto-Erzeuger `lib/audit_to_event.py` (Whitelist über Settings, Default `status_changed` aus Process-Status-Wechsel), Plan 08 umgesetzt 2026-06-20. Fehlt für die End-Stufe: Timeline-UI am EntityOverlay (eigener Plan), erweiterbare Auto-Rules per UI/Setting, Workflow-Reaktionen (§7), Mail-/Kalender-Ingest (§20), Visualisierungen (§11).
 
 ### Vision
 - **Fachliche Events** als eigene Entität in der Tenant-DB: "Anruf am 12.6.", "Mail rausgegangen", "Termin", "Statuswechsel".
@@ -904,6 +904,332 @@ Beide haben dieselbe Schicht-Reihenfolge (groß → klein), bleiben aber struktu
 - Wie versionieren wir Setting-Änderungen? Vermutlich greift dafür der Change-Log (§26) ohnehin — `Setting` ist auch eine Entität.
 - Wer darf was setzen? Vermutlich pro `key` eine Mindest-Rolle deklarieren ("nur Plattform-Admin darf retention setzen", "Tenant-Admin darf Modell wählen").
 - Schema-Validierung der `value` — pro `key` ein JSON-Schema in einer zentralen Registry?
+
+---
+
+## 28. Person
+
+**Status:** fehlt als eigene Entität — `User`, `Contact`, `Lead` existieren getrennt; eine generische `Person` als gemeinsame Identitäts-Klammer gibt es nicht.
+
+### Vision
+- **`Person`** ist die abstrakte Identitäts-Entität für jede natürliche Person, mit der das System direkt oder indirekt zu tun hat: Mitarbeiter, externe Ansprechpartner, Stakeholder, Quellen-Personen ("der Anwalt, der diesen Vorgang begleitet"), Empfehlende.
+- **`User`, `Contact`, `Lead` bleiben semantisch eigenständig** — sie sind keine Sub-Typen von `Person`, sondern getrennte fachliche Konzepte mit jeweils eigenem Bezug zur Plattform:
+  - `User` = jemand mit Plattform-Login.
+  - `Contact` = qualifizierter externer Ansprechpartner im CRM-Kontext.
+  - `Lead` = roher externer Kontakt vor Qualifizierung.
+- `Person` ist die **gemeinsame Klammer drüber**: einer Person können optional ein `User`, ein oder mehrere `Contact`-Records und/oder `Lead`-Records zugeordnet sein. Dieselbe Person kann gleichzeitig Mitarbeiter, externer Kunde und Privatkontakt sein, ohne dreimal angelegt zu werden.
+- **Freitext-Profil** auf der Person: Beschreibung, Rolle/Expertise, Stil, Tabus, Notizen — von Mensch oder AI gepflegt. Die AI nutzt das, um zu entscheiden, *welche Person* sinnvoll als Antwort-Adressat zu einer Conversation (§38), Frage (§39) oder einem Task eingebunden wird.
+
+### Felder (Skizze)
+- Pflicht: Anzeigename, polymorpher Anker (auf jede Entität anhängbar).
+- Optional: Mail, Telefon, Sprache, Zeitzone, Foto/Avatar-Ref.
+- Profil-Block (Freitext): Rolle/Expertise, Persönlichkeit/Stil, Tabus, allgemeine Notizen.
+- Verknüpfungen: optional `user_id`, optional `contact_ids[]`, optional `lead_ids[]`.
+
+### Abgrenzung
+- **Person ≠ User**: nicht jede Person hat einen Login, aber jeder User entspricht einer Person.
+- **Person ≠ Contact / Lead**: Contact/Lead sind CRM-Rollen-Sichten auf eine Person; eine Person kann mehrere Contacts in verschiedenen Kontexten haben.
+- **Person ≠ Team (§30)**: Team ist eine Sammlung von Personen/Users.
+
+### Was zu klären ist
+- Auto-Anlage: legt das System eine Person beim ersten Contact/Lead an, oder bleibt Person optional und wird auf Wunsch hochgezogen?
+- Konflikt-Auflösung: wie merge ich zwei Personen, die sich später als dieselbe rausstellen — Merge-Aktion + Change-Log-Eintrag (§26)?
+- Berechtigungen am Profil: wer darf den Freitext einer Person editieren — sie selbst (wenn User), der Owner-User, Tenant-Admin?
+
+---
+
+## 29. Organisation (Organization)
+
+**Status:** teilweise — `Account` existiert als CRM-spezifisches Konzept, aber keine generische `Organization` quer durchs System.
+
+### Vision
+- **`Organization`** ist die abstrakte Klammer für jede juristische oder organisierte Einheit, mit der das System zu tun hat: Kunden-Firmen, eigene Tenant-Firma, Lieferanten, Behörden, Gerichte, Partner, Konkurrenten, NGOs, Vereine.
+- Heutiger CRM-`Account` wird zur **Rolle** einer `Organization` — eine Organisation kann gleichzeitig Kunde, Lieferant und Behörde sein, ohne dafür drei Records anzulegen.
+- Felder: Anzeigename, Branche, Website, Adress-/Place-Anker (§12), Freitext-Profil, Eigentümer-User, polymorpher Anker.
+- Polymorph anhängbar wie alle anderen Entitäten.
+
+### Abgrenzung
+- **Organization ≠ Account (CRM)**: Account bleibt als CRM-Sicht bestehen (Pipeline-Bezug, Deal-Verknüpfung) und referenziert eine `Organization`. Mehrere CRM-Rollen pro Organization sind möglich.
+- **Organization ≠ Team (§30)**: Team ist eine Untergliederung innerhalb einer Organisation, oft ohne eigene juristische Existenz.
+- **Organization ≠ Tenant**: Tenant ist die Plattform-Kunden-Einheit (eigene DB). Eine `Organization` kann der Tenant selbst sein ("wir"), aber auch jede externe Org.
+
+### Was zu klären ist
+- Migration: bekommen heutige `Account`-Records automatisch eine `Organization` darunter, oder wird `Account` komplett in `Organization` aufgelöst und die CRM-Spezifika werden Rollen-Tags / Sub-Tabelle?
+- Hierarchie zwischen Organisationen (Mutterkonzern → Tochter): über §40 Relationship oder eigener `parent_id`?
+
+---
+
+## 30. Team / Gruppe
+
+**Status:** fehlt komplett.
+
+### Vision
+- **`Team`** (oder **`Gruppe`**) ist eine benannte Sammlung von Personen oder Users, die für gemeinsame Arbeit, Zuweisung oder Kommunikation zusammengefasst werden.
+- Zwei typische Ausprägungen:
+  - **Internes Team** (im Tenant) — z.B. "Vertrieb", "Support", "Geschäftsführung". Mitglieder sind `User`s. Wird als Task-Assignee, Notification-Empfänger, Berechtigungs-Gruppe und Memory-Scope verwendet.
+  - **Externe Gruppe** — z.B. eine Projekt-Gruppe quer über mehrere Firmen, eine Lieferanten-Allianz, ein Beirat. Mitglieder sind `Person`s.
+- Polymorph anhängbar.
+- **Verschachtelbar** (analog Project/Process): Unter-Teams sind möglich.
+
+### Felder (Skizze)
+- Pflicht: Anzeigename, Typ (`internal` / `external`), polymorpher Anker.
+- Optional: Beschreibung, Organization-Ref (zu welcher Org gehört das Team), parent_team_id.
+- Mitglieder: M:N-Brücke zu Person (extern) oder User (intern), mit optionaler Rolle im Team und Lebenszeit.
+
+### Abgrenzung
+- **Team ≠ Organization**: Untergliederung, oft ohne eigene juristische Existenz.
+- **Team ≠ Rolle** am User: Rolle ist ein Berechtigungs-/Funktion-Tag pro Person/User; Team ist die Sammlung selbst.
+- **Team ≠ Conversation-Teilnehmer-Liste (§38)**: Conversation kann ein Team als Teilnehmer haben; das ist Bequemlichkeit, nicht Identität.
+
+### Was zu klären ist
+- Berechtigungen: vererbt ein Team Berechtigungen an seine Mitglieder, oder ist es nur eine Bequemlichkeits-Sammlung?
+- Memory am Team (§6) — z.B. "das Team Vertrieb duzt Kunden grundsätzlich"; Reihenfolge im Prompt-Kontext zwischen Tenant- und User-Memory?
+- Externe Gruppen mit Mitgliedern aus mehreren Orgs — wie modellieren wir Sichtbarkeit?
+
+---
+
+## 31. Auftrag (Order / Commission)
+
+**Status:** fehlt — heute teilweise über `Process.kind` abgebildet, aber ohne eigenständigen Begriff.
+
+### Vision
+- **`Auftrag`** ist der **externe Trigger einer Arbeit**: jemand beauftragt uns mit einer Sache. Anders als Vorgang (= unsere Arbeitseinheit) und anders als Projekt (= unsere größere Klammer): Auftrag ist die **Eingangs-Sicht** auf den Anlass.
+- Felder: Kurztitel, Auftraggeber (Person und/oder Organization), Auftragsdatum, gewünschte Leistung (Freitext + optional verlinkte Anforderungen §32), Annahme-Status (offen / angenommen / abgelehnt / abgeschlossen), Bearbeitungs-Verknüpfung zu Vorgang(en) / Projekt(en).
+- **1:n Bearbeitung**: ein Auftrag kann zu mehreren Vorgängen/Projekten führen (Großauftrag mit Teilprojekten), oder ein einzelner Vorgang/Projekt bearbeitet mehrere Aufträge zusammen.
+
+### Abgrenzung
+- **Auftrag ≠ Vorgang**: Auftrag ist der Anlass, Vorgang ist unsere Bearbeitung.
+- **Auftrag ≠ Anforderung (§32)**: Anforderung ist *was* geliefert werden soll; Auftrag ist *wer hat beauftragt, wann, unter welchen Bedingungen*.
+- **Auftrag ≠ Deal (CRM)**: Deal ist die Verkaufs-Phase davor (Akquise, Pipeline); Auftrag ist nach der Beauftragung.
+
+### Was zu klären ist
+- Brauchen wir Auftrags-Untertypen (Werkvertrag / Dienstvertrag / interner Auftrag), oder reicht ein Freitext-Typ + Tag (§22)?
+- Verbindung Deal → Auftrag → Vorgang → Rechnung: standardisierte Pipeline mit Übergangs-Aktionen, oder lose Verknüpfung?
+
+---
+
+## 32. Anforderung (Requirement)
+
+**Status:** fehlt komplett.
+
+### Vision
+- **`Anforderung`** ist eine **präskriptive Aussage**: "Es muss gelten, dass …". Heute modelliert das System nur *was zu tun ist* (Task) und *was ist* (Document) — nicht *was gelten muss*.
+- Anforderungen können an Aufträge, Vorgänge, Projekte, Verträge, Normen hängen.
+- Felder: Kurztitel, Beschreibung (Freitext, primär), Quelle (verweist auf §35 `Source` oder §36 `Norm`), Status (entworfen / aktiv / erfüllt / verworfen), Erfüllungs-Kriterium (Freitext, optional Checkliste), Priorität, polymorpher Anker.
+- **Tasks operationalisieren Anforderungen**: ein Task kann optional `target_cls=core.requirement` haben und gehört damit explizit zu einer Anforderung. Die AI nutzt das, um zu prüfen, ob alle Anforderungen abgedeckt sind ("3 von 5 Anforderungen haben noch keinen offenen Task").
+
+### Abgrenzung
+- **Anforderung ≠ Task**: Task = "tu X", Anforderung = "es muss gelten Y". Ein Y kann mehrere X auslösen.
+- **Anforderung ≠ Norm (§36)**: Norm ist allgemeingültig (Gesetz, ISO, AGB); Anforderung ist auf einen konkreten Auftrag/Vorgang heruntergebrochen ("für diesen Auftrag fordern wir … gemäß § 312 BGB").
+- **Anforderung ≠ Decision (§37)**: Decision ist eine Festlegung im Verlauf; Anforderung ist eine Vorgabe von außen oder zu Beginn.
+
+### Was zu klären ist
+- Versionierung: was passiert mit Tasks, wenn sich eine Anforderung ändert — Snapshot pro Task oder Live-Verlinkung?
+- Abnahme-Workflow: wer markiert eine Anforderung als erfüllt, und braucht es eine Gegenzeichnung?
+- AI-Extraktion: soll die AI aus Auftragstexten automatisch Anforderungs-Kandidaten extrahieren?
+
+---
+
+## 33. Problem (Issue)
+
+**Status:** fehlt komplett.
+
+### Vision
+- **`Problem`** ist ein erfasster **Ist-Abweichungs-Befund**: "Hier stimmt etwas nicht / hier hakt es". Anders als Task (was zu tun ist) und anders als Frage (§39, was offen ist): Problem beschreibt eine **Beobachtung** in der Welt, die behandelt werden sollte.
+- Felder: Kurztitel, Beschreibung (Freitext), Schwere (gering / mittel / hoch / kritisch), Status (offen / in Bearbeitung / gelöst / akzeptiert / verworfen), Symptome (Freitext oder verlinkte Events §2), Lösungs-Notiz (Freitext, optional Verweis auf Decision §37), polymorpher Anker.
+- **Probleme triggern Arbeit**: aus einem Problem können Tasks, ein eigener Vorgang oder eine Conversation (§38) entstehen.
+
+### Abgrenzung
+- **Problem ≠ Task**: Problem beschreibt einen Zustand, Task ist die Handlung dagegen.
+- **Problem ≠ Reklamation**: Reklamation ist ein Sonderfall (extern gemeldetes Problem mit Vertragsbezug); Problem ist allgemeiner und intern wie extern.
+- **Problem ≠ Frage (§39)**: Frage = "ich weiß etwas nicht und brauche eine Antwort"; Problem = "ich beobachte einen Missstand".
+
+### Was zu klären ist
+- Sollte es eine eigene "Lösung"-Sub-Entität geben, oder reicht es, das gelöste Problem mit verlinktem Decision (§37) abzuschließen?
+- Eskalation: wie wird aus einem Problem ein Vorgang — automatisch via Schwere-Schwelle / per Aktion?
+
+---
+
+## 34. Ressource (Resource / Asset)
+
+**Status:** fehlt komplett.
+
+### Vision
+- **`Ressource`** ist ein **gegenständliches oder kapazitäres Etwas**, das gebucht, zugewiesen, verbraucht oder verwaltet wird: Maschinen, Werkzeuge, Fahrzeuge, Räume, Lizenzen, virtuelle Slots ("Telefonleitung 1"), Roh-/Verbrauchsstoffe, Server, Software-Accounts.
+- Felder: Anzeigename, Typ (Freitext + optional Tag), Verfügbarkeits-Status (verfügbar / gebucht / wartung / außer Betrieb), Standort (verweist auf `Place` §12), Eigentümer/Verantwortlicher (Person/Organization), Beschreibung, polymorpher Anker.
+- Verknüpfung zu **Appointments (§20)** für Buchungen ("Raum X ist am 12.3. für Termin Y belegt"), zu **Tasks** für Zuweisung, zu **Vorgängen** für Einsatz-Tracking.
+
+### Abgrenzung
+- **Ressource ≠ Document**: Dokument ist Inhalt, Ressource ist Gegenstand.
+- **Ressource ≠ Person/Team**: auch wenn Personen im Planungs-Sinn "Ressourcen" sind — Person bleibt eigene Entität (§28); Ressource ist für Nicht-Menschliches.
+- **Ressource ≠ Place (§12)**: Place ist ein Ort (auch ohne Bewegung/Verbrauch); Ressource ist etwas, das verfügbar oder belegt sein kann.
+
+### Was zu klären ist
+- Buchungs-Mechanik: Doppelbuchungs-Schutz im Code (Constraint) oder als Workflow-Regel?
+- Inventar-Mengen: brauchen wir Stückzahl-Felder für Verbrauchsstoffe, oder bleibt das im Freitext bis ein eigenes Inventar-MCP kommt?
+- Wartungs-Trigger: Ressource → AI-Reminder (§23) für regelmäßige Checks?
+
+---
+
+## 35. Quelle (Source)
+
+**Status:** fehlt komplett. **Hohe Priorität** (Citation-Maschinerie für jede AI-Aussage).
+
+### Vision
+- **`Quelle`** ist eine **Referenz auf eine externe Wissens-Wurzel**, von der Inhalte/Aussagen abgeleitet wurden: URL, Buch, Gesetz/Norm-Verweis, gesprächs-Mitschnitt, Auskunfts-Person, internes Vor-Dokument, KI-Suchergebnis-Snapshot.
+- Anders als `Document` (eigenständiger Inhalt unter unserer Kontrolle): Quelle ist oft **nicht in unserem Besitz** — wir referenzieren sie und halten eine **AI-erzeugte Zusammenfassung / Auszüge / optional Snapshot** vor.
+- Felder: Kurztitel, Art (`url` / `buch` / `norm` / `person` / `datei` / `sonstiges`), Originaler Verweis (URL, ISBN, Aktenzeichen, Person-Ref), Zugriffs-Datum, AI-Zusammenfassung (Freitext), gehosteter Snapshot (optional `Attachment`-Verweis), Vertrauenswürdigkeit (gering / mittel / hoch), polymorpher Anker.
+
+### Citation-Maschinerie
+- Die AI **legt automatisch Quellen-Einträge an**, wenn sie aus extern recherchierten Informationen zitiert (z.B. Web-Researcher-Sub-Agent §8). Antworten im Chat können "Quellen"-Footnotes haben, die auf diese Einträge zeigen.
+- Beim Erstellen einer Anforderung (§32), einer Norm-Referenz (§36) oder einer Decision (§37) verlangt die UI auf Wunsch eine verknüpfte Quelle — "warum gilt das, woher weißt du das".
+
+### Abgrenzung
+- **Quelle ≠ Document**: Document = eigener Inhalt unter unserer Kontrolle; Quelle = Verweis auf fremden Inhalt.
+- **Quelle ≠ Norm (§36)**: Norm ist präskriptives Wissen mit eigener Struktur (Paragraphen); eine Norm *kann* eine Quelle haben (das tatsächliche Gesetzes-Dokument), bleibt aber eine eigenständige Anforderungs-Entität.
+- **Quelle ≠ ExternalEvent (§20)**: ExternalEvent = Audit-Spur unserer Aktion an die Außenwelt; Quelle = Wissens-Wurzel, die in unsere Welt reinfließt.
+
+### Was zu klären ist
+- Wie weit holen wir den Inhalt rein — kompletter Snapshot vs. nur AI-Summary vs. nur Link? Wahrscheinlich konfigurierbar pro Quelle/Tenant.
+- Verfall: was tun, wenn eine Web-Quelle weg ist (404) — reicht der Snapshot, oder als "stale" markieren?
+- Verhältnis zum Semantic-Index: Quellen-Auszüge gehören in den Index, der Original-Verweis nicht.
+
+---
+
+## 36. Norm (Law / Regel / Standard)
+
+**Status:** fehlt komplett.
+
+### Vision
+- **`Norm`** ist **präskriptives, oft öffentlich gültiges Wissen mit hierarchischer Struktur**: Gesetze, Verordnungen, AGB, ISO-Normen, DIN-Standards, interne Policies, branchenspezifische Regelwerke.
+- **Nestbar / verschachtelt**: Norm → Untergliederung (Buch / Teil / Kapitel / Paragraph / Absatz / Satz). Tiefe ist beliebig, Standard-Drill ist ein Selbst-Verweis (`parent_id`).
+- Felder: Titel, Kurzbezeichnung ("§ 433 BGB"), Volltext oder Auszug, Geltungsbereich (Freitext, optional Tag), Inkrafttreten, Ablöse-Datum, Sanktion bei Verstoß (Freitext), Quelle-Ref (§35), polymorpher Anker.
+- **Die AI nutzt Normen** als Wissens-Schicht: bei einem Vorgang vom Typ X kann sie automatisch passende Normen vorschlagen ("dieser Vorgang berührt § 312 BGB").
+- **Polymorph anhängbar** — eine Norm wird an einen Vorgang/Auftrag/Anforderung gehängt, wenn sie relevant ist.
+
+### Abgrenzung
+- **Norm ≠ Anforderung (§32)**: Norm ist generell ("so muss jeder Werkvertrag aussehen"); Anforderung ist konkret heruntergebrochen ("dieser Werkvertrag mit Kunde Y muss …").
+- **Norm ≠ Quelle (§35)**: Norm ist *präskriptiv* und eigenständig in unserem Modell; Quelle ist *deskriptiv* und nur Verweis. Eine Norm kann eine Quelle haben (das Original-Gesetz).
+- **Norm ≠ Workflow (§7)**: Workflow beschreibt, wie wir bei uns vorgehen; Norm beschreibt, was von außen vorgegeben ist.
+
+### Was zu klären ist
+- Versionierung: wenn ein Gesetz novelliert wird — neue Norm-Entität mit `replaces`-Verweis (§40 Relationship) oder Version-Snapshot der alten?
+- Suche: Norm-Volltexte können sehr lang werden — Stückung pro Paragraph für den Semantic-Index?
+- Branchenspezifische Default-Normsets pro Tenant — kommt mit MCP-Domain-Plug-ins (§21)?
+
+---
+
+## 37. Entscheidung (Decision)
+
+**Status:** fehlt komplett.
+
+### Vision
+- **`Decision`** ist eine **kuratierte Aufzeichnung einer getroffenen Entscheidung**: was wurde beschlossen, von wem, wann, auf welcher Grundlage, gegen welche Alternativen.
+- Felder: Kurztitel, Beschreibung (Freitext), Entscheidende(r) (Person/Team), Datum, Optionen (Freitext-Liste, optional strukturiert), Begründung, erwartete Wirkung (Freitext + verlinkte Tasks/Anforderungen), Status (vorgeschlagen / beschlossen / revidiert), polymorpher Anker.
+- Verknüpfung zu Quelle (§35) für die Grundlage, zu Anforderung (§32) für die Wirkung, zu Conversation (§38) für die Entstehungs-Diskussion.
+
+### Abgrenzung
+- **Decision ≠ Comment**: Comment ist Diskussions-Beitrag im Verlauf; Decision ist das Ergebnis am Ende einer Diskussion.
+- **Decision ≠ Task-Status**: ein Task abzuhaken ist eine Mikro-Entscheidung; Decision ist die kuratierte, erinnerungswürdige Festlegung.
+- **Decision ≠ EntityChange (§26)**: Change-Log ist die maschinelle Feld-Diff-Buchhaltung; Decision ist die menschen-/AI-formulierte Bedeutung dahinter.
+
+### Was zu klären ist
+- AI-Vorschlag: soll die AI aus Conversations (§38) und Comments automatisch Decision-Kandidaten extrahieren ("hier wurde anscheinend etwas beschlossen, soll ich das als Decision festhalten")?
+- Reversibilität: wenn eine Decision später revidiert wird — neue Decision mit Verweis (Relationship `revidiert`) auf die alte, oder Status-Wechsel?
+
+---
+
+## 38. Konversation (Conversation)
+
+**Status:** fehlt — `Comment` existiert als Einzel-Eintrag, aber kein Diskurs-Container, der mehrere Menschen und optional die AI als Teilnehmer kennt.
+
+### Vision
+- **`Conversation`** ist ein **menschen-zentrierter Diskurs-Faden**, der polymorph an einer beliebigen Entität hängt — die "Kommentar-Spalte an alles".
+- Mehrere **Personen** (§28) sind Teilnehmer; die **AI kann mitreden**, aber der Faden gehört konzeptionell den Menschen.
+- Felder: Titel (optional), Anker (`target_cls`/`target_id`), Teilnehmer-Liste (Person-Refs, optional Team-Refs), Status (offen / archiviert), Sichtbarkeit (privat / Team / öffentlich), polymorpher Anker.
+- **Beiträge** sind `Comment`-Einträge (existiert): `Comment` bekommt einen optionalen `conversation_id`-Anker — ohne Conversation bleibt Comment der "lose Kommentar an etwas".
+
+### AI-Rolle
+- Die AI kann zu jeder Conversation **vorschlagen, welche Personen sinnvoll einzubinden wären** — dafür liest sie die Profil-Freitexte der Personen (§28). Beispiel: "Frage zu Maschinenbau-Norm — soll ich Hans (Profil: 'Maschinenbau-Ingenieur, 20 Jahre Erfahrung') hinzufügen?"
+- Die AI kann selbst Beiträge schreiben, mit klarer Markierung als AI-Beitrag (analog §22 Tag-Setter `human`/`ai`).
+- Die AI kann eine Conversation zusammenfassen und einen Decision-Vorschlag (§37) daraus ableiten.
+
+### Abgrenzung
+- **Conversation ≠ AiChat (§10)**: AiChat ist AI-zentriert (Mensch ↔ Agent oder Agent ↔ Sub-Agent); Conversation ist Mensch ↔ Mensch, AI optional als Teilnehmer.
+- **Conversation ≠ Comment**: Comment ist der einzelne Beitrag; Conversation ist der gebündelte Faden.
+- **Conversation ≠ Interaction (CRM)**: Interaction ist ein extern stattgefundener Touchpoint (Anruf, Mail); Conversation ist die Diskussion über die Plattform.
+
+### Was zu klären ist
+- @-Mentions: Notification (§19) automatisch?
+- AI-Default-Verhalten: in einer Conversation standardmäßig stumm und nur auf Aufruf antworten, oder darf sie sich von selbst melden? → wahrscheinlich eine Setting (§27).
+- Verhältnis zu Sub-Chats (§10): wenn die AI in einer Conversation länger arbeitet, spawnt sie einen AiChat — wie wird der zurückgekoppelt?
+
+---
+
+## 39. Frage (Question)
+
+**Status:** fehlt komplett.
+
+### Vision
+- **`Question`** ist eine **explizit erfasste, noch offene Frage**: jemand weiß etwas nicht oder braucht eine Bestätigung, und das wird festgehalten — statt in einer Conversation zu versickern.
+- Felder: Frage-Text, gestellt von (Person), gerichtet an (Person/Team oder die AI), Status (offen / beantwortet / verworfen), Antwort (Freitext, optional Verweis auf Decision §37 oder Source §35), polymorpher Anker.
+- **Polymorph anhängbar** — jede Entität kann offene Fragen tragen, die die AI im jeweiligen Kontext mit-präsentieren kann ("zu diesem Vorgang gibt es 2 offene Fragen").
+- Die AI kann Fragen aus Conversations/Notes/Mails extrahieren ("hier hat jemand gefragt, soll ich das als offene Frage festhalten?") und Antworten vorschlagen.
+
+### Abgrenzung
+- **Question ≠ Task**: Task ist Tu-Auftrag; Question ist Wissens-Lücke. Aus einer Frage *kann* eine Task entstehen ("Frag den Anwalt").
+- **Question ≠ Problem (§33)**: Problem = beobachteter Ist-Missstand; Question = fehlende Information.
+- **Question ≠ Decision (§37)**: Question ist das Davor; Decision ist das Danach.
+
+### Was zu klären ist
+- Soll die AI eigene Wissens-Lücken automatisch als `Question` anlegen statt zu spekulieren ("Ich weiß nicht, soll ich das als offene Frage an X stellen?")?
+- Aging: alte unbeantwortete Fragen — automatische Eskalation via AI-Reminder (§23), oder bleiben sie still liegen?
+
+---
+
+## 40. Relationship
+
+**Status:** fehlt als first-class — heute implizit über polymorphe Anker auf einzelnen Entitäten.
+
+### Vision
+- **`Relationship`** ist eine **getypte, mit Lebenszeit versehene Beziehung zwischen zwei Entitäten**. Beispiele: "Person A ist Vorgesetzte von Person B (seit 2024-01-01)", "Organization X ist Tochter von Y", "Vorgang A ist Folge-Vorgang von B", "Document A ersetzt Document B", "Norm A wurde durch Norm B abgelöst".
+- Felder: Quelle (`from_cls`/`from_id`), Ziel (`to_cls`/`to_id`), Beziehungs-Typ (Freitext oder Tag-Ref, z.B. `vorgesetzt`, `tochter_von`, `ersetzt`, `ist_quelle_von`, `folge_von`), Beginn, Ende (optional), Beschreibung (Freitext), polymorpher Eigentümer-Anker.
+- **Symmetrie**: per Default gerichtet; symmetrische Beziehungen werden über zwei Einträge oder ein Symmetrie-Flag modelliert.
+
+### Wofür gut, jetzt mit AI
+- AI kann **Beziehungs-Netze** lesen, um Kontext herzustellen ("Person A ist Vorgesetzte von Person B → frag erst A, bevor du B störst").
+- AI kann **Beziehungen vorschlagen**, wenn sie aus Text Patterns erkennt ("hier wird mehrfach gesagt, dass X von Y abhängt — Relationship anlegen?").
+- **Org-Charts, Genealogien, Vorgangs-Ketten, Quellen-Verkettungen, Norm-Ablöse-Ketten** werden alle über denselben Mechanismus abgebildet, statt pro Domäne eigene M:N-Tabellen.
+
+### Abgrenzung
+- **Relationship ≠ polymorpher Anker** (`target_cls`/`target_id`): der Anker ist eine Besitz-/Zuordnungs-Hierarchie ("Note gehört zu Vorgang"). Relationship ist eine fachliche Beziehung mit eigener Lebenszeit und Typ.
+- **Relationship ≠ Tag (§22)**: Tag ist Klassifizierung einer Entität; Relationship ist eine konkrete Verbindung zwischen zwei Records.
+- **Relationship ≠ ChatArtifact (§24)**: ChatArtifact ist die Mappe-pro-Chat, technisches Tracking; Relationship ist fachlich.
+
+### Was zu klären ist
+- Wie verhindern wir Sprawl (jede Kleinigkeit als Relationship)? Wahrscheinlich Allow-Liste an erlaubten Beziehungs-Typen pro Tenant, AI-Vorschläge laufen über Approval.
+- Cycle-Detection bei hierarchischen Typen (Vorgesetzte → Vorgesetzte → … → erste Person).
+- Visualisierung — wo sieht der Nutzer ein Beziehungs-Netz: Sidebar-Tab pro Entität, Explorer-View, oder eigenes Graph-Overlay (§11)?
+
+---
+
+## 41. Wert / Position / Transaktion (Roadmap)
+
+**Status:** bewusst aufgeschoben — kommt mit einem eigenen Buchhaltungs-/Faktura-MCP (§21).
+
+### Vision
+Eine **quantitative Schicht** für Geld-, Material- und Verantwortungs-Flüsse:
+- **Position / Line-Item** — atomare Reihe einer Aufstellung (Rechnungs-Position, Inventar-Reihe, Stückliste, Angebots-Position).
+- **Transaktion** — gerichtete Wert-Bewegung (Buchung, Lager-Bewegung, Verantwortungs-Übergabe).
+- **Wert-Aggregate** — Saldo, Buchungs-Konten, Bilanz-Sichten.
+
+### Warum nicht jetzt
+Diese Schicht **kommt mit einem eigenen Buchhaltungs- / Faktura-MCP** (§21) und wird im Kern bewusst nicht vorgegriffen, weil die Domänen-Spezifika (Steuer, Konten-Rahmen, Rechnungsstellung, Buchungslogik) zu reichhaltig sind, um abstrakt sinnvoll modelliert zu werden — das ist genau ein Fall, wo ein Domain-MCP die richtigen Spalten und Mechaniken einbringt.
+
+### Bezug zu anderen Konzepten
+- **Auftrag (§31)** und **Anforderung (§32)** sind die qualitativen Pendants — sie beschreiben *was*; diese Schicht beschreibt *zu welchem Wert*.
+- **Deal (CRM)** ist eine frühe quantitative Annäherung; ein Buchhaltungs-MCP würde Deals zu Positionen/Transaktionen weiterführen.
+- **Ressource (§34)** kann mit Verbrauchs-Transaktionen verknüpft sein (Lager-Abbuchung).
 
 ---
 

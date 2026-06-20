@@ -12,8 +12,6 @@ closed_values (Default: abgeschlossen/abgebrochen) zaehlt.
 Bewusst keine FK-Checks: project_id / parent_id / assignee_user_id /
 owner_user_id sind nackte Integer-Refs (Repo-Konvention).
 """
-from __future__ import annotations
-
 import os
 from datetime import datetime, timezone
 from typing import Any
@@ -270,7 +268,7 @@ _PATCHABLE_FIELDS: set[str] = {
 
 
 @mcp.tool()
-def update_process(id: int, patch: dict | None = None) -> dict:
+def update_process(id: int, patch: dict = {}) -> dict:
     """Generischer Patch fuer ein Process. Whitelist siehe _PATCHABLE_FIELDS.
 
     Wenn ``status`` im Patch ist, gilt dieselbe Validierungs- und

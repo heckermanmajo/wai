@@ -42,6 +42,11 @@ log = get_logger(__name__)
 CHANGE_LOG_FIELD_MAX_BYTES = 4096
 
 _OUTBOX_KEY = "audit_change_log"
+# Plan 08 — nach erfolgreichem _drain() legen wir einen Snapshot der
+# geschriebenen EntityChange-Rows (inkl. der frisch vergebenen IDs) hier
+# ab. Der Auto-Event-Listener (lib/audit_to_event.py) liest das in einem
+# spaeter registrierten after_commit-Hook.
+COMMITTED_KEY = "audit_change_log_committed"
 
 # ContextVar fuer optionale, vom Agent gesetzte Summary fuer den NAECHSTEN
 # logischen Save. Plan 04 — Setting-Override fuer "Beschreibung um …
@@ -218,9 +223,33 @@ def _drain(session: Session) -> None:
     try:
         with session_for_logging() as fresh:
             from lib.entities.logging.entity_change import EntityChange  # lazy
+            rows: list = []
             for e in bag:
-                fresh.add(EntityChange(**e))
+                row = EntityChange(**e)
+                fresh.add(row)
+                rows.append(row)
+            # flush() vergibt die IDs, ohne die Session zu schliessen — der
+            # Snapshot fuer Plan-08-Listener wird VOR commit() abgegriffen,
+            # damit expire_on_commit den row.id-Zugriff nicht abreisst.
+            fresh.flush()
+            committed: list[dict] = [
+                {
+                    "id": int(r.id),
+                    "tenant_id": r.tenant_id or "",
+                    "target_cls": r.target_cls,
+                    "target_id": int(r.target_id),
+                    "change_type": r.change_type,
+                    "actor_type": r.actor_type,
+                    "actor_id": int(r.actor_id),
+                    "agent_name": r.agent_name,
+                    "trace_uid": r.trace_uid,
+                    "field_diffs": list(r.field_diffs or []),
+                }
+                for r in rows
+            ]
             fresh.commit()
+        if committed:
+            session.info[COMMITTED_KEY] = committed
     except Exception:
         log.warning(
             "audit_drain_failed (n=%d) — Audit-Eintraege verworfen",
@@ -281,6 +310,7 @@ def _after_commit(session: Session) -> None:
 def _after_rollback(session: Session) -> None:
     session.info.pop(_OUTBOX_KEY, None)
     session.info.pop("audit_pending_new", None)
+    session.info.pop(COMMITTED_KEY, None)
 
 
 _listeners_registered = False
